@@ -1,0 +1,21 @@
+# DeepFM Configuration — Pipeline Step 2
+# Engagement prediction (CTR-style binary classification)
+
+# DNN component
+dnn_hidden_units: [256, 128, 64]
+dnn_dropout: 0.1
+
+# Regularisation
+l2_reg_embedding: 1.0e-5
+l2_reg_dnn: 0.0
+
+# Training
+epochs: 10
+batch_size: 256
+learning_rate: 1.0e-3
+
+# Label: rating >= threshold → positive engagement
+rating_threshold: 4.0
+
+# Device: cpu or cuda
+device: cpu

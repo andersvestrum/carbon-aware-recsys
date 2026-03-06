@@ -1,0 +1,41 @@
+# RecBole SASRec Configuration
+# =============================
+# Self-Attentive Sequential Recommendation (Kang & McAuley, 2018)
+# Captures sequential patterns in user interaction history.
+
+# ── Model ─────────────────────────────────────────────────────────────
+model: SASRec
+n_layers: 2
+n_heads: 2
+hidden_size: 64
+inner_size: 256
+hidden_dropout_prob: 0.5
+attn_dropout_prob: 0.5
+hidden_act: gelu
+layer_norm_eps: 1.0e-12
+MAX_ITEM_LIST_LENGTH: 50
+
+# ── Training ──────────────────────────────────────────────────────────
+epochs: 50
+train_batch_size: 2048
+learning_rate: 0.001
+neg_sampling:
+  uniform: 1
+
+# ── Evaluation ────────────────────────────────────────────────────────
+eval_args:
+  split:
+    LS: valid_and_test
+  group_by: user
+  order: TO                  # time-ordered for sequential model
+  mode: full
+
+metrics: [NDCG, Recall, MRR]
+topk: [10]
+valid_metric: NDCG@10
+
+# ── Early stopping ───────────────────────────────────────────────────
+stopping_step: 10
+
+# ── Output ────────────────────────────────────────────────────────────
+show_progress: true
