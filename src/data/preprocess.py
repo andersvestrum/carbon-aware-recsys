@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.data.amazon_loader import (
@@ -23,10 +24,13 @@ from src.data.amazon_loader import (
     load_all_amazon_data,
     load_all_meta,
 )
+from src.carbon.predictor import CarbonPredictor
+from src.carbon.mapper import CarbonMapper
 
 # Project root: carbon-aware-recsys/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INTERIM_DIR = PROJECT_ROOT / "data" / "interim"
+MODEL_DIR = PROJECT_ROOT / "output" / "models"
 
 # Metadata columns to keep when merging (drop heavy blob-like fields)
 META_COLS_TO_KEEP = [
@@ -46,6 +50,37 @@ CATEGORY_MAP = {
     "hak": "home_and_kitchen",
     "sao": "sports_and_outdoors",
 }
+
+
+def assign_pcf(
+    meta_df: pd.DataFrame,
+    predictor: CarbonPredictor,
+    mapper: CarbonMapper,
+) -> pd.DataFrame:
+    """Assign predicted Product Carbon Footprint (PCF) to each product.
+
+    Uses the trained CarbonPredictor (via CarbonMapper) to translate
+    Amazon metadata into the Carbon Catalogue feature space and predict
+    a carbon footprint for every product.
+
+    Args:
+        meta_df: Metadata DataFrame (must contain ``parent_asin`` and ``title``).
+        predictor: A fitted CarbonPredictor.
+        mapper: A CarbonMapper instance.
+
+    Returns:
+        The same DataFrame with a new ``pcf`` column (kg CO₂e).
+    """
+    meta_df = meta_df.copy()
+
+    # Map Amazon metadata → predicted carbon footprint
+    estimates = mapper.map(meta_df, predictor)
+
+    # Join pcf back on parent_asin
+    pcf_lookup = estimates.set_index("parent_asin")["pcf"]
+    meta_df["pcf"] = meta_df["parent_asin"].map(pcf_lookup).fillna(0.0)
+
+    return meta_df
 
 
 def merge_meta_with_interactions(
@@ -77,6 +112,15 @@ def merge_meta_with_interactions(
     print("=" * 60)
     all_meta = load_all_meta(force_download=force_download)
 
+    # 3. Load carbon predictor + mapper (once for all categories)
+    print("=" * 60)
+    print("Loading carbon predictor …")
+    print("=" * 60)
+    model_path = MODEL_DIR / "carbon_model.joblib"
+    predictor = CarbonPredictor.load(model_path)
+    mapper = CarbonMapper()
+    print(f"  Loaded predictor from {model_path}")
+
     merged_all: dict[str, dict[str, pd.DataFrame]] = {}
 
     for cat_key, meta_key in CATEGORY_MAP.items():
@@ -92,6 +136,11 @@ def merge_meta_with_interactions(
 
         # De-duplicate metadata on parent_asin (keep first occurrence)
         meta_slim = meta_slim.drop_duplicates(subset="parent_asin")
+
+        # Assign predicted PCF using the carbon model
+        meta_slim = assign_pcf(meta_slim, predictor, mapper)
+        print(f"  Assigned predicted PCF to {len(meta_slim):,} products"
+              f"  (median={meta_slim['pcf'].median():.2f} kg CO₂e)")
 
         splits = all_interactions[cat_key]
         merged_splits: dict[str, pd.DataFrame] = {}
