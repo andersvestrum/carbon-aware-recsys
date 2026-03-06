@@ -1,0 +1,29 @@
+# Carbon-Aware Re-ranking Configuration
+# =======================================
+# Controls the λ sweep and top-k for re-ranking (pipeline step 2).
+
+# ── λ sweep ──────────────────────────────────────────────────────────
+# λ = 0  → pure relevance (no carbon awareness)
+# λ = 1  → pure carbon minimisation (ignore relevance)
+lambda_values:
+  - 0.0
+  - 0.025
+  - 0.05
+  - 0.075
+  - 0.1
+  - 0.15
+  - 0.2
+  - 0.25
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  - 1.0
+
+# ── Re-ranking top-k ─────────────────────────────────────────────────
+# Number of items to return per user after re-ranking.
+# Should be ≤ the candidate pool from RecBole (default 100).
+top_k: 10
