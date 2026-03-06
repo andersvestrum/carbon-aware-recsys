@@ -18,4 +18,4 @@ learning_rate: 1.0e-3
 rating_threshold: 4.0
 
 # Device: cpu or cuda
-device: cpu
+device: cuda
