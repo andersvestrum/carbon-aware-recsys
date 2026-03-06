@@ -10,6 +10,8 @@ verified purchase with rating as engagement level.
 Subcategories loaded: Electronics, Home_and_Kitchen, Sports_and_Outdoors
 """
 
+import gzip
+import json
 import os
 from pathlib import Path
 
@@ -19,8 +21,29 @@ import pandas as pd
 # Project root: carbon-aware-recsys/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_AMAZON_DIR = PROJECT_ROOT / "data" / "raw" / "amazon"
+META_DIR = RAW_AMAZON_DIR / "meta"
 
-# Google Drive file IDs extracted from share links
+# ── Cap on metadata rows (set to None to load all) ────────────────────
+MAX_META_ROWS = 50_000  # TODO: remove cap for full runs
+
+# ── Metadata file IDs (json.gz from Google Drive) ──────────────────────
+# Provide the Google Drive file IDs for each category's metadata file.
+AMAZON_META_FILES = {
+    "electronics": {
+        "id": "1HIW5G-K0SEtroNBiXXAdt-4fxkgUsCeJ",
+        "filename": "meta_electronics.json.gz",
+    },
+    "home_and_kitchen": {
+        "id": "1McSEoW1uxeNu12QWSJmNu8L_P2G8Xeue",
+        "filename": "meta_home_and_kitchen.json.gz",
+    },
+    "sports_and_outdoors": {
+        "id": "1UYtERfQHl_sKjzMjIT7hXwUjFPKqo6Qm",
+        "filename": "meta_sports_and_outdoors.json.gz",
+    },
+}
+
+# ── Review split file IDs (CSV from Google Drive) ──────────────────────
 AMAZON_ELECTRONICS_FILES = {
     "train": {
         "id": "1A81uvtJFqjL8EKdCHEEjTmMnUgGuoitt",
@@ -182,6 +205,63 @@ def load_all_amazon_data(force_download: bool = False) -> dict[str, dict[str, pd
     }
 
 
+# ── Metadata (json.gz) download & load ────────────────────────────────
+def _download_file(file_id: str, output_path: Path, force: bool = False) -> Path:
+    """Download a single file from Google Drive if it doesn't already exist."""
+    os.makedirs(output_path.parent, exist_ok=True)
+    if output_path.exists() and not force:
+        print(f"  Already exists: {output_path.name}")
+    else:
+        print(f"  Downloading: {output_path.name} ...")
+        gdown.download(f"https://drive.google.com/uc?id={file_id}", str(output_path), quiet=False)
+    return output_path
+
+
+def load_meta(category: str, force_download: bool = False) -> pd.DataFrame:
+    """Download (if needed) and load a category's metadata.
+
+    Workflow:
+    1. If a capped CSV already exists, load it directly (fast).
+    2. Otherwise, download the json.gz, parse up to MAX_META_ROWS,
+       save a CSV, then delete the json.gz to save disk space.
+    """
+    csv_path = META_DIR / f"meta_{category}.csv"
+
+    if csv_path.exists() and not force_download:
+        print(f"  Loading cached CSV: {csv_path.name}")
+        df = pd.read_csv(csv_path)
+    else:
+        # Download json.gz, parse, save as CSV, then remove json.gz
+        info = AMAZON_META_FILES[category]
+        gz_path = _download_file(info["id"], META_DIR / info["filename"], force=force_download)
+        rows = []
+        with gzip.open(gz_path, "rt", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rows.append(json.loads(line))
+                if MAX_META_ROWS is not None and len(rows) >= MAX_META_ROWS:
+                    break
+        df = pd.DataFrame(rows)
+
+        os.makedirs(csv_path.parent, exist_ok=True)
+        df.to_csv(csv_path, index=False)
+        print(f"  Saved CSV: {csv_path.name} ({csv_path.stat().st_size / 1e6:.1f} MB)")
+
+        # Remove the large json.gz to save disk space
+        gz_path.unlink()
+        print(f"  Removed: {gz_path.name}")
+
+    print(f"  {category}: {len(df):,} items, {len(df.columns)} columns")
+    return df
+
+
+def load_all_meta(force_download: bool = False) -> dict[str, pd.DataFrame]:
+    """Download (if needed) and load all category metadata as DataFrames."""
+    print("Loading Amazon metadata ...")
+    return {cat: load_meta(cat, force_download) for cat in AMAZON_META_FILES}
+
+
 if __name__ == "__main__":
     all_data = load_all_amazon_data()
     for category, splits in all_data.items():
@@ -191,3 +271,11 @@ if __name__ == "__main__":
         for split, df in splits.items():
             print(f"\n--- {split} ---")
             print(df.head())
+
+    # Load metadata
+    all_meta = load_all_meta()
+    for category, df in all_meta.items():
+        print(f"\n{'='*50}")
+        print(f"Metadata: {category}")
+        print(f"{'='*50}")
+        print(df.head())
