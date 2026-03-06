@@ -1,6 +1,6 @@
 # Carbon-Aware Re-ranking Configuration
 # =======================================
-# Controls the λ sweep and top-k for re-ranking (pipeline step 2).
+# Controls the λ sweep and top-k for re-ranking (pipeline step 3).
 
 # ── λ sweep ──────────────────────────────────────────────────────────
 # λ = 0  → pure relevance (no carbon awareness)
