@@ -1,0 +1,35 @@
+# RecBole NeuMF Configuration
+# ============================
+# Neural Matrix Factorization (He et al., 2017)
+# Combines GMF and MLP for learning user-item interactions.
+
+# ── Model ─────────────────────────────────────────────────────────────
+model: NeuMF
+embedding_size: 64
+mlp_hidden_size: [128, 64, 32]
+dropout_prob: 0.1
+
+# ── Training ──────────────────────────────────────────────────────────
+epochs: 50
+train_batch_size: 2048
+learning_rate: 0.001
+neg_sampling:
+  uniform: 1
+
+# ── Evaluation ────────────────────────────────────────────────────────
+eval_args:
+  split:
+    LS: valid_and_test
+  group_by: user
+  order: RO
+  mode: full
+
+metrics: [NDCG, Recall, MRR]
+topk: [10]
+valid_metric: NDCG@10
+
+# ── Early stopping ───────────────────────────────────────────────────
+stopping_step: 10
+
+# ── Output ────────────────────────────────────────────────────────────
+show_progress: true
