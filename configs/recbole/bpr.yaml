@@ -1,0 +1,33 @@
+# RecBole BPR Configuration
+# =========================
+# Default config for Bayesian Personalized Ranking (BPR) model.
+# Override via CLI or by passing overrides dict to trainer.train().
+
+# ── Model ─────────────────────────────────────────────────────────────
+model: BPR
+embedding_size: 64
+
+# ── Training ──────────────────────────────────────────────────────────
+epochs: 50
+train_batch_size: 2048
+learning_rate: 0.001
+neg_sampling:
+  uniform: 1
+
+# ── Evaluation ────────────────────────────────────────────────────────
+eval_args:
+  split:
+    LS: valid_and_test       # leave-one-out split
+  group_by: user
+  order: RO                  # random order (no timestamp required)
+  mode: full                 # rank against all items
+
+metrics: [NDCG, Recall, MRR]
+topk: [10]
+valid_metric: NDCG@10
+
+# ── Early stopping ───────────────────────────────────────────────────
+stopping_step: 10
+
+# ── Output ────────────────────────────────────────────────────────────
+show_progress: true
