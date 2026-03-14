@@ -12,6 +12,7 @@ Step 1 – merge_meta_with_interactions()
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 
@@ -20,6 +21,10 @@ import pandas as pd
 from src.data.amazon_loader import (
     load_all_amazon_data,
     load_all_meta,
+    load_amazon_electronics_data,
+    load_amazon_hak_data,
+    load_amazon_sao_data,
+    load_meta,
 )
 from src.carbon.retrieval import PCFRetrievalEstimator, RetrievalConfig
 
@@ -87,9 +92,19 @@ def assign_pcf(
     return meta_df
 
 
+_CATEGORY_LOADERS = {
+    "electronics": (load_amazon_electronics_data, "electronics"),
+    "hak": (load_amazon_hak_data, "home_and_kitchen"),
+    "sao": (load_amazon_sao_data, "sports_and_outdoors"),
+}
+
+ALL_CATEGORIES = list(CATEGORY_MAP.keys())
+
+
 def merge_meta_with_interactions(
     force_download: bool = False,
     meta_cols: list[str] | None = None,
+    categories: list[str] | None = None,
 ) -> dict[str, dict[str, pd.DataFrame]]:
     """Merge metadata into every interaction split and save to interim/.
 
@@ -97,24 +112,42 @@ def merge_meta_with_interactions(
         force_download: Passed through to the download helpers.
         meta_cols: Metadata columns to keep (besides parent_asin).
                    Defaults to META_COLS_TO_KEEP.
+        categories: Category keys to process (e.g. ``["electronics"]``).
+                    Defaults to all categories.
 
     Returns:
         Nested dict  {category: {split: merged_df}}
     """
     if meta_cols is None:
         meta_cols = META_COLS_TO_KEEP
+    if categories is None:
+        categories = ALL_CATEGORIES
+
+    selected = {k: v for k, v in CATEGORY_MAP.items() if k in categories}
 
     # 1. Load interaction data  {category: {split: df}}
     print("=" * 60)
     print("Loading interaction data …")
     print("=" * 60)
-    all_interactions = load_all_amazon_data(force_download=force_download)
+    if set(categories) == set(ALL_CATEGORIES):
+        all_interactions = load_all_amazon_data(force_download=force_download)
+    else:
+        all_interactions = {}
+        for cat_key in selected:
+            loader, _ = _CATEGORY_LOADERS[cat_key]
+            all_interactions[cat_key] = loader(force_download=force_download)
 
     # 2. Load metadata  {category: df}
     print("=" * 60)
     print("Loading metadata …")
     print("=" * 60)
-    all_meta = load_all_meta(force_download=force_download)
+    if set(categories) == set(ALL_CATEGORIES):
+        all_meta = load_all_meta(force_download=force_download)
+    else:
+        all_meta = {
+            meta_key: load_meta(meta_key, force_download=force_download)
+            for meta_key in selected.values()
+        }
 
     cached_estimates: pd.DataFrame | None = None
     estimator: PCFRetrievalEstimator | None = None
@@ -137,7 +170,7 @@ def merge_meta_with_interactions(
 
     merged_all: dict[str, dict[str, pd.DataFrame]] = {}
 
-    for cat_key, meta_key in CATEGORY_MAP.items():
+    for cat_key, meta_key in selected.items():
         print(f"\n{'─' * 60}")
         print(f"  Category: {meta_key}")
         print(f"{'─' * 60}")
@@ -193,4 +226,22 @@ def merge_meta_with_interactions(
 
 
 if __name__ == "__main__":
-    merge_meta_with_interactions()
+    parser = argparse.ArgumentParser(description="Preprocess Amazon data with PCF estimates.")
+    parser.add_argument(
+        "--category",
+        choices=ALL_CATEGORIES,
+        nargs="+",
+        default=None,
+        help="Category keys to process (default: all). "
+             "Choices: electronics, hak, sao",
+    )
+    parser.add_argument(
+        "--force-download",
+        action="store_true",
+        help="Re-download files even if they already exist.",
+    )
+    args = parser.parse_args()
+    merge_meta_with_interactions(
+        force_download=args.force_download,
+        categories=args.category,
+    )
