@@ -1,7 +1,7 @@
 """
 Data Preprocessing
 
-Cleans, merges Amazon interactions with carbon data,
+Cleans, merges Amazon interactions with retrieval-based carbon estimates,
 and formats output for RecBole (.inter, .item, .user files).
 
 Step 1 – merge_meta_with_interactions()
@@ -15,22 +15,19 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from src.data.amazon_loader import (
-    RAW_AMAZON_DIR,
-    META_DIR,
     load_all_amazon_data,
     load_all_meta,
 )
-from src.carbon.predictor import CarbonPredictor
-from src.carbon.mapper import CarbonMapper
+from src.carbon.retrieval import PCFRetrievalEstimator, RetrievalConfig
 
 # Project root: carbon-aware-recsys/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INTERIM_DIR = PROJECT_ROOT / "data" / "interim"
-MODEL_DIR = PROJECT_ROOT / "output" / "models"
+PROCESSED_CARBON_DIR = PROJECT_ROOT / "data" / "processed" / "carbon"
+PCF_PREDICTIONS_PATH = PROCESSED_CARBON_DIR / "amazon_pcf_predictions.csv"
 
 # Metadata columns to keep when merging (drop heavy blob-like fields)
 META_COLS_TO_KEEP = [
@@ -54,27 +51,34 @@ CATEGORY_MAP = {
 
 def assign_pcf(
     meta_df: pd.DataFrame,
-    predictor: CarbonPredictor,
-    mapper: CarbonMapper,
+    *,
+    cached_estimates: pd.DataFrame | None = None,
+    estimator: PCFRetrievalEstimator | None = None,
 ) -> pd.DataFrame:
     """Assign predicted Product Carbon Footprint (PCF) to each product.
 
-    Uses the trained CarbonPredictor (via CarbonMapper) to translate
-    Amazon metadata into the Carbon Catalogue feature space and predict
-    a carbon footprint for every product.
+    Uses cached retrieval-based predictions when available, otherwise
+    falls back to an in-memory semantic retrieval estimator.
 
     Args:
         meta_df: Metadata DataFrame (must contain ``parent_asin`` and ``title``).
-        predictor: A fitted CarbonPredictor.
-        mapper: A CarbonMapper instance.
+        cached_estimates: Precomputed ``parent_asin`` → ``pcf`` lookup.
+        estimator: Retrieval estimator used when cached predictions are absent.
 
     Returns:
         The same DataFrame with a new ``pcf`` column (kg CO₂e).
     """
     meta_df = meta_df.copy()
 
-    # Map Amazon metadata → predicted carbon footprint
-    estimates = mapper.map(meta_df, predictor)
+    if cached_estimates is not None:
+        estimates = cached_estimates
+    else:
+        if estimator is None:
+            raise RuntimeError(
+                "No cached PCF predictions or retrieval estimator provided."
+            )
+        estimates = estimator.predict_amazon_products(meta_df)[["parent_asin", "pcf"]]
+    estimates = estimates.drop_duplicates(subset="parent_asin", keep="first")
 
     # Join pcf back on parent_asin
     pcf_lookup = estimates.set_index("parent_asin")["pcf"]
@@ -112,14 +116,24 @@ def merge_meta_with_interactions(
     print("=" * 60)
     all_meta = load_all_meta(force_download=force_download)
 
-    # 3. Load carbon predictor + mapper (once for all categories)
+    cached_estimates: pd.DataFrame | None = None
+    estimator: PCFRetrievalEstimator | None = None
+
+    # 3. Load cached PCF predictions or build retrieval estimator once
     print("=" * 60)
-    print("Loading carbon predictor …")
+    if PCF_PREDICTIONS_PATH.exists():
+        print("Loading cached PCF predictions …")
+        cached_estimates = pd.read_csv(
+            PCF_PREDICTIONS_PATH,
+            usecols=["parent_asin", "pcf"],
+        )
+        print(f"  Loaded cached predictions from {PCF_PREDICTIONS_PATH}")
+    else:
+        print("Building retrieval-based PCF estimator …")
+        estimator = PCFRetrievalEstimator(RetrievalConfig())
+        estimator.fit_carbon_catalogue()
+        print("  Built retrieval estimator from the Carbon Catalogue")
     print("=" * 60)
-    model_path = MODEL_DIR / "carbon_model.joblib"
-    predictor = CarbonPredictor.load(model_path)
-    mapper = CarbonMapper()
-    print(f"  Loaded predictor from {model_path}")
 
     merged_all: dict[str, dict[str, pd.DataFrame]] = {}
 
@@ -137,8 +151,12 @@ def merge_meta_with_interactions(
         # De-duplicate metadata on parent_asin (keep first occurrence)
         meta_slim = meta_slim.drop_duplicates(subset="parent_asin")
 
-        # Assign predicted PCF using the carbon model
-        meta_slim = assign_pcf(meta_slim, predictor, mapper)
+        # Assign predicted PCF using cached predictions or semantic retrieval
+        meta_slim = assign_pcf(
+            meta_slim,
+            cached_estimates=cached_estimates,
+            estimator=estimator,
+        )
         print(f"  Assigned predicted PCF to {len(meta_slim):,} products"
               f"  (median={meta_slim['pcf'].median():.2f} kg CO₂e)")
 
