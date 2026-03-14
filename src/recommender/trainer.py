@@ -257,6 +257,7 @@ def extract_relevance_scores(
     """
     import torch
     from recbole.data.interaction import Interaction
+    from tqdm import tqdm
 
     log.info("Extracting relevance scores (top-%d per user) …", top_k)
 
@@ -270,7 +271,7 @@ def extract_relevance_scores(
     device = config["device"]
 
     with torch.no_grad():
-        for uid in range(1, n_users):  # 0 is [PAD] in RecBole
+        for uid in tqdm(range(1, n_users), desc="Scoring users", unit="user"):
             # Build a dummy interaction with just the user id
             interaction = Interaction({"user_id": torch.tensor([uid])})
             interaction = interaction.to(device)
