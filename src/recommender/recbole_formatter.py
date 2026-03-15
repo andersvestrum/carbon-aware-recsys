@@ -166,12 +166,15 @@ def write_recbole_item(
 def format_category_for_recbole(
     category: str,
     dataset_name: str | None = None,
+    max_users: int | None = None,
 ) -> tuple[Path, str]:
     """Full pipeline: load interim data → write RecBole files.
 
     Args:
         category: Category filename stem (e.g. ``"electronics"``).
         dataset_name: RecBole dataset name. Defaults to the category name.
+        max_users: If set, sample this many users and keep only their
+            interactions. Dramatically speeds up training on large datasets.
 
     Returns:
         (output_dir, dataset_name)
@@ -180,6 +183,18 @@ def format_category_for_recbole(
         dataset_name = category
 
     interactions = _concat_interim_splits(category)
+
+    if max_users is not None:
+        all_users = interactions["user_id"].unique()
+        if len(all_users) > max_users:
+            rng = np.random.RandomState(42)
+            sampled_users = rng.choice(all_users, size=max_users, replace=False)
+            interactions = interactions[interactions["user_id"].isin(sampled_users)].copy()
+            log.info(
+                "Subsetted to %d users → %s interactions",
+                max_users, f"{len(interactions):,}",
+            )
+
     output_dir = RECBOLE_DIR / dataset_name
 
     write_recbole_inter(interactions, dataset_name, output_dir)
