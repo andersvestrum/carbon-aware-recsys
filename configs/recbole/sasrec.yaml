@@ -19,7 +19,8 @@ MAX_ITEM_LIST_LENGTH: 50
 epochs: 50
 train_batch_size: 2048
 learning_rate: 0.001
-neg_sampling: null # this is different from the other models, they have:  uniform: 1
+# neg_sampling: null # this is different from the other models, they have:  uniform: 1
+train_neg_sample_args: null
 
 # ── Evaluation ────────────────────────────────────────────────────────
 eval_args:
