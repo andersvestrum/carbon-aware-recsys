@@ -2,7 +2,7 @@
 """
 Evaluation & Pareto Frontier (Pipeline Step 4)
 ================================================
-Analyses the engagement vs carbon footprint trade-off, extracts
+Analyses the engagement vs AvgPCF@10 trade-off, extracts
 Pareto-optimal operating points, and generates visualisations.
 
 Pipeline context:
@@ -97,13 +97,13 @@ def main():
 
         log.info("")
         log.info("  ── Summary ──")
-        log.info("  Baseline (λ=0): NDCG@10=%.4f  carbon=%.2f kg",
+        log.info("  Baseline (λ=0): NDCG@10=%.4f  AvgPCF@10=%.2f kg",
                  baseline.get("NDCG@10", 0), baseline.get("avg_carbon_kg", 0))
         log.info("  Pareto-optimal points: %d", len(pareto))
 
         for pt in pareto:
             log.info(
-                "    λ=%.3f  NDCG@10=%.4f  carbon=%.2f kg  (−%.1f%%)",
+                "    λ=%.3f  NDCG@10=%.4f  AvgPCF@10=%.2f kg  (−%.1f%%)",
                 pt["lambda"],
                 pt.get("NDCG@10", 0),
                 pt.get("avg_carbon_kg", 0),
@@ -118,7 +118,7 @@ def main():
                 best["lambda"],
             )
             log.info(
-                "    NDCG@10=%.4f  carbon=%.2f kg",
+                "    NDCG@10=%.4f  AvgPCF@10=%.2f kg",
                 best.get("NDCG@10", 0),
                 best.get("avg_carbon_kg", 0),
             )

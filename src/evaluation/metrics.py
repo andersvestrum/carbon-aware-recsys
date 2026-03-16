@@ -197,10 +197,10 @@ def plot_tradeoff_curve(
             zorder=5, label="Baseline (λ=0)",
         )
 
-    ax.set_xlabel("Avg Carbon Footprint (kg CO₂e)", fontsize=12)
+    ax.set_xlabel("AvgPCF@10 (kg CO₂e)", fontsize=12)
     ax.set_ylabel(engagement_key, fontsize=12)
     ax.set_title(
-        f"Engagement vs Carbon Trade-off — {category.replace('_', ' ').title()} ({model_name})",
+        f"NDCG@10 vs AvgPCF@10 — {category.replace('_', ' ').title()} ({model_name})",
         fontsize=14, fontweight="bold",
     )
     ax.legend(fontsize=10)
@@ -263,10 +263,10 @@ def plot_multi_category(
             label=f"{label} (Pareto)",
         )
 
-    ax.set_xlabel("Avg Carbon Footprint (kg CO₂e)", fontsize=12)
+    ax.set_xlabel("AvgPCF@10 (kg CO₂e)", fontsize=12)
     ax.set_ylabel(engagement_key, fontsize=12)
     ax.set_title(
-        f"Engagement vs Carbon — All Categories ({model_name})",
+        f"NDCG@10 vs AvgPCF@10 — All Categories ({model_name})",
         fontsize=14, fontweight="bold",
     )
     ax.legend(fontsize=10)
@@ -319,11 +319,11 @@ def plot_lambda_sensitivity(
         df["lambda"], df[carbon_key],
         "s--", color=color_carb, linewidth=2, markersize=6,
     )
-    ax2.set_ylabel("Avg Carbon (kg CO₂e)", fontsize=12, color=color_carb)
+    ax2.set_ylabel("AvgPCF@10 (kg CO₂e)", fontsize=12, color=color_carb)
     ax2.tick_params(axis="y", labelcolor=color_carb)
 
     ax1.set_title(
-        f"λ Sensitivity — {category.replace('_', ' ').title()} ({model_name})",
+        f"λ Sensitivity: NDCG@10 and AvgPCF@10 — {category.replace('_', ' ').title()} ({model_name})",
         fontsize=14, fontweight="bold",
     )
     ax1.grid(True, alpha=0.3)
