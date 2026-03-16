@@ -165,10 +165,11 @@ def run_reranking(
         ranked.to_parquet(out_path, index=False)
 
         log.info(
-            "  λ=%5.3f  NDCG@%d=%.4f  carbon=%.2f kg  (%s users)",
+            "  λ=%5.3f  NDCG@%d=%.4f  AvgPCF@%d=%.2f kg  (%s users)",
             lam,
             top_k,
             metrics[f"NDCG@{top_k}"],
+            top_k,
             metrics["avg_carbon_kg"],
             metrics["n_users"],
         )
@@ -265,8 +266,9 @@ def main():
 
         s = result["summary"]
         log.info(
-            "  Baseline carbon: %.2f kg → Greenest (λ=%.3f): %.2f kg  "
+            "  Baseline AvgPCF@%d: %.2f kg → Greenest (λ=%.3f): %.2f kg  "
             "(−%.1f%%)",
+            top_k,
             s["baseline_carbon_kg"],
             s["greenest_lambda"],
             s["greenest_carbon_kg"],

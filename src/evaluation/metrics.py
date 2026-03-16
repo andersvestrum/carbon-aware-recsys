@@ -11,7 +11,7 @@ Core capabilities:
 
 Metrics:
     - NDCG@k, Recall@k, MRR  (ranking quality)
-    - avg_carbon_kg            (mean PCF of recommended items)
+    - avg_carbon_kg            (mean PCF of recommended items, shown as AvgPCF@k)
     - carbon_reduction_pct     (vs λ=0 baseline)
 """
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,22 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_DIR = PROJECT_ROOT / "output" / "results"
 FIGURES_DIR = PROJECT_ROOT / "output" / "figures"
+
+
+def _infer_top_k(metric_key: str, default_k: int = 10) -> int:
+    """Infer @k from a metric name like ``NDCG@10``."""
+    match = re.search(r"@(\d+)", metric_key)
+    return int(match.group(1)) if match else default_k
+
+
+def _carbon_axis_label(carbon_key: str, engagement_key: str) -> str:
+    """Return report-consistent axis label for carbon metrics."""
+    if carbon_key == "avg_carbon_kg":
+        k = _infer_top_k(engagement_key)
+        return f"AvgPCF@{k} (kg CO₂e)"
+    if carbon_key.startswith("AvgPCF@"):
+        return f"{carbon_key} (kg CO₂e)"
+    return carbon_key
 
 
 # ─── Pareto frontier ─────────────────────────────────────────────────────────
@@ -197,10 +214,10 @@ def plot_tradeoff_curve(
             zorder=5, label="Baseline (λ=0)",
         )
 
-    ax.set_xlabel("Avg Carbon Footprint (kg CO₂e)", fontsize=12)
+    ax.set_xlabel(_carbon_axis_label(carbon_key, engagement_key), fontsize=12)
     ax.set_ylabel(engagement_key, fontsize=12)
     ax.set_title(
-        f"Engagement vs Carbon Trade-off — {category.replace('_', ' ').title()} ({model_name})",
+        f"Engagement–Emissions Pareto Frontier — {category.replace('_', ' ').title()} ({model_name})",
         fontsize=14, fontweight="bold",
     )
     ax.legend(fontsize=10)
@@ -263,10 +280,10 @@ def plot_multi_category(
             label=f"{label} (Pareto)",
         )
 
-    ax.set_xlabel("Avg Carbon Footprint (kg CO₂e)", fontsize=12)
+    ax.set_xlabel(_carbon_axis_label(carbon_key, engagement_key), fontsize=12)
     ax.set_ylabel(engagement_key, fontsize=12)
     ax.set_title(
-        f"Engagement vs Carbon — All Categories ({model_name})",
+        f"Engagement–Emissions Pareto Frontier — All Categories ({model_name})",
         fontsize=14, fontweight="bold",
     )
     ax.legend(fontsize=10)
@@ -319,7 +336,11 @@ def plot_lambda_sensitivity(
         df["lambda"], df[carbon_key],
         "s--", color=color_carb, linewidth=2, markersize=6,
     )
-    ax2.set_ylabel("Avg Carbon (kg CO₂e)", fontsize=12, color=color_carb)
+    ax2.set_ylabel(
+        _carbon_axis_label(carbon_key, engagement_key),
+        fontsize=12,
+        color=color_carb,
+    )
     ax2.tick_params(axis="y", labelcolor=color_carb)
 
     ax1.set_title(
