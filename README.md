@@ -52,6 +52,14 @@ For reproducible retrieval runs, keep the default seed, stay on CPU, and use `--
 
 ## Latest Result
 
+**How to regenerate (Table 1):** From the repo root, with `OPENAI_API_KEY` set for LLM baselines:
+
+```bash
+uv run python scripts/predict_carbon.py --evaluation-limit 100 --amazon-limit 0
+```
+
+Outputs: `output/results/carbon/pcf_evaluation_metrics.csv` and `pcf_evaluation_predictions.csv`. Use `--amazon-limit 0` to run only the 100-item evaluation and skip full Amazon scoring.
+
 Current checked LLM comparison on a 100-example Carbon Catalogue evaluation slice with `gpt-4.1-mini`:
 
 | method | n | RMSE | MAE | Spearman |
@@ -63,5 +71,5 @@ Current checked LLM comparison on a 100-example Carbon Catalogue evaluation slic
 Interpretation:
 
 - `few_shot_llm` is the strongest method in this run. It improves both absolute error and rank correlation over the neighbor-average baseline.
-- `zero_shot_llm` is unstable as a numeric regressor in the current prompt format because it can produce extreme scale errors.
-- The result is directional, not final: the LLM comparison above uses 100 evaluation examples to control API cost. For a stronger research claim, rerun on the full Carbon Catalogue or across repeated fixed-seed samples.
+- `zero_shot_llm`: the table above is from a run *before* scale fixes. The code now (1) clamps all LLM PCF outputs to a plausible range (0.01–10,000 kg CO2e), and (2) anchors the zero-shot prompt with a typical scale hint. Re-running evaluation should yield more useful zero-shot metrics.
+- The result is directional, not final: the LLM comparison uses 100 evaluation examples to control API cost. For a stronger research claim, rerun on the full Carbon Catalogue or across repeated fixed-seed samples.

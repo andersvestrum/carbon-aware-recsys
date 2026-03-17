@@ -77,6 +77,11 @@ AMAZON_OUTPUT_BASE_COLS = (
 _FLOAT_RE = re.compile(r"[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?")
 _WHITESPACE_RE = re.compile(r"\s+")
 
+# Plausible PCF range (kg CO2e); matches CarbonPredictor clip. Used to bound LLM
+# outputs so zero-shot scale errors don't dominate metrics.
+PCF_KG_MIN = 0.01
+PCF_KG_MAX = 10_000.0
+
 
 @dataclass
 class RetrievalConfig:
@@ -303,11 +308,12 @@ class OpenAILLMClient:
 
 
 def parse_numeric_response(text: str) -> float:
-    """Extract the first non-negative float from an LLM response."""
+    """Extract the first non-negative float from an LLM response and clamp to plausible PCF range."""
     match = _FLOAT_RE.search(text)
     if match is None:
         raise ValueError(f"Could not parse a numeric PCF from response: {text!r}")
-    return max(float(match.group(0)), 0.0)
+    value = max(float(match.group(0)), 0.0)
+    return float(np.clip(value, PCF_KG_MIN, PCF_KG_MAX))
 
 
 def _is_missing(value: Any) -> bool:
@@ -498,9 +504,11 @@ def prepare_amazon_metadata(
 def build_zero_shot_prompt(product_title: str) -> str:
     """Prompt for the zero-shot LLM baseline."""
     return (
-        "Estimate the Product Carbon Footprint (kg CO2e) for the following product.\n\n"
+        "Estimate the Product Carbon Footprint (kg CO2e) for the following product. "
+        "Typical values are between 1 and 10,000 kg CO2e for most consumer products.\n\n"
         f"Product: {product_title}\n\n"
-        "Return only a numeric value."
+        "Format: reply with exactly one number (e.g. 150 or 2.5), no scientific notation, "
+        "no units or other text. The number is the PCF in kg CO2e."
     )
 
 
