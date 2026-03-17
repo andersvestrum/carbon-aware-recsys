@@ -64,12 +64,12 @@ Current checked LLM comparison on a 100-example Carbon Catalogue evaluation slic
 
 | method | n | RMSE | MAE | Spearman |
 | --- | ---: | ---: | ---: | ---: |
-| neighbor_average | 100 | 3964.05 | 1325.51 | 0.7709 |
-| zero_shot_llm | 100 | 499999999.81 | 50002277.35 | 0.4902 |
-| few_shot_llm | 100 | 3479.51 | 870.61 | 0.8528 |
+| neighbor_average | 100 | 3,964 | 1,326 | 0.771 |
+| zero_shot_llm | 100 | 8,878 | 3,334 | 0.421 |
+| few_shot_llm | 100 | 8,328 | 1,696 | 0.853 |
 
 Interpretation:
 
-- `few_shot_llm` is the strongest method in this run. It improves both absolute error and rank correlation over the neighbor-average baseline.
-- `zero_shot_llm`: the table above is from a run *before* scale fixes. The code now (1) clamps all LLM PCF outputs to a plausible range (0.01–10,000 kg CO2e), and (2) anchors the zero-shot prompt with a typical scale hint. Re-running evaluation should yield more useful zero-shot metrics.
+- `few_shot_llm` achieves the best rank correlation but higher MAE than the neighbor baseline, confirming that retrieved in-context examples primarily help on ranking quality rather than absolute error.
+- `zero_shot_llm` remains the weakest baseline (lowest Spearman, highest MAE) even after adding scale/format instructions and clamping, but now operates in a plausible numeric range instead of producing catastrophic outliers.
 - The result is directional, not final: the LLM comparison uses 100 evaluation examples to control API cost. For a stronger research claim, rerun on the full Carbon Catalogue or across repeated fixed-seed samples.
