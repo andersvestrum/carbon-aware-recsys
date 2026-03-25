@@ -231,6 +231,97 @@ def train(
 
 # ─── Score extraction (model-agnostic) ────────────────────────────────────────
 
+def _score_via_full_sort(model, dataset, config, top_k):
+    """Score users via full_sort_predict (general recommenders)."""
+    import torch
+    from recbole.data.interaction import Interaction
+    from tqdm import tqdm
+
+    user_ids = dataset.field2id_token["user_id"]
+    item_ids = dataset.field2id_token["item_id"]
+    n_users = dataset.user_num
+    n_items = dataset.item_num
+    device = config["device"]
+    rows: list[dict] = []
+
+    with torch.no_grad():
+        for uid in tqdm(range(1, n_users), desc="Scoring users", unit="user"):
+            interaction = Interaction({"user_id": torch.tensor([uid])})
+            interaction = interaction.to(device)
+
+            scores = model.full_sort_predict(interaction).cpu()
+            scores[0] = -float("inf")
+
+            topk_scores, topk_items = torch.topk(scores, min(top_k, n_items - 1))
+
+            u_str = user_ids[uid] if uid < len(user_ids) else None
+            if u_str is None:
+                continue
+
+            for item_idx, score in zip(topk_items.numpy(), topk_scores.numpy()):
+                i_str = (
+                    item_ids[int(item_idx)]
+                    if int(item_idx) < len(item_ids)
+                    else None
+                )
+                if i_str is None:
+                    continue
+                rows.append({
+                    "user_id": u_str,
+                    "parent_asin": i_str,
+                    "relevance_score": float(score),
+                })
+    return rows
+
+
+def _score_via_pairwise(model, dataset, config, top_k):
+    """Score users via predict() on (user, item) pairs — universal fallback."""
+    import torch
+    from recbole.data.interaction import Interaction
+    from tqdm import tqdm
+
+    user_ids = dataset.field2id_token["user_id"]
+    item_ids = dataset.field2id_token["item_id"]
+    n_users = dataset.user_num
+    n_items = dataset.item_num
+    device = config["device"]
+    rows: list[dict] = []
+
+    all_item_ids = torch.arange(1, n_items, device=device)
+
+    with torch.no_grad():
+        for uid in tqdm(range(1, n_users), desc="Scoring users (pairwise)", unit="user"):
+            user_tensor = torch.full_like(all_item_ids, uid)
+            interaction = Interaction({
+                "user_id": user_tensor,
+                "item_id": all_item_ids,
+            })
+            interaction = interaction.to(device)
+
+            scores = model.predict(interaction).cpu()
+            topk_scores, topk_idx = torch.topk(scores, min(top_k, len(scores)))
+
+            u_str = user_ids[uid] if uid < len(user_ids) else None
+            if u_str is None:
+                continue
+
+            for idx, score in zip(topk_idx.numpy(), topk_scores.numpy()):
+                item_internal = all_item_ids[idx].item()
+                i_str = (
+                    item_ids[item_internal]
+                    if item_internal < len(item_ids)
+                    else None
+                )
+                if i_str is None:
+                    continue
+                rows.append({
+                    "user_id": u_str,
+                    "parent_asin": i_str,
+                    "relevance_score": float(score),
+                })
+    return rows
+
+
 def extract_relevance_scores(
     model,
     dataset,
@@ -239,12 +330,9 @@ def extract_relevance_scores(
 ) -> pd.DataFrame:
     """Extract relevance scores for the top-K items per user.
 
-    Works with **any** RecBole general/sequential recommender by using
-    ``model.full_sort_predict()``, which computes scores for all items
-    in a single forward pass regardless of model architecture.
-
-    The output feeds directly into the carbon-aware re-ranker:
-        ``re_rank_score = relevance_score − λ · carbon_footprint``
+    Tries ``full_sort_predict`` first (fast, works for most general
+    recommenders).  Falls back to pairwise ``predict()`` if the model
+    does not implement full-sort scoring.
 
     Args:
         model: Trained RecBole model (any general or sequential recommender).
@@ -259,49 +347,17 @@ def extract_relevance_scores(
     from recbole.data.interaction import Interaction
 
     log.info("Extracting relevance scores (top-%d per user) …", top_k)
-
     model.eval()
-    rows: list[dict] = []
 
-    user_ids = dataset.field2id_token["user_id"]   # idx → original str
-    item_ids = dataset.field2id_token["item_id"]   # idx → original str
-    n_users = dataset.user_num
-    n_items = dataset.item_num
-    device = config["device"]
-
-    with torch.no_grad():
-        for uid in range(1, n_users):  # 0 is [PAD] in RecBole
-            # Build a dummy interaction with just the user id
-            interaction = Interaction({"user_id": torch.tensor([uid])})
-            interaction = interaction.to(device)
-
-            # full_sort_predict returns scores for ALL items  (shape: n_items,)
-            scores = model.full_sort_predict(interaction).cpu()
-
-            # Mask out padding item (index 0)
-            scores[0] = -float("inf")
-
-            topk_scores, topk_items = torch.topk(scores, min(top_k, n_items - 1))
-
-            u_str = user_ids[uid] if uid < len(user_ids) else None
-            if u_str is None:
-                continue
-
-            for item_idx, score in zip(
-                topk_items.numpy(), topk_scores.numpy()
-            ):
-                i_str = (
-                    item_ids[int(item_idx)]
-                    if int(item_idx) < len(item_ids)
-                    else None
-                )
-                if i_str is None:
-                    continue
-                rows.append({
-                    "user_id": u_str,
-                    "parent_asin": i_str,
-                    "relevance_score": float(score),
-                })
+    # Probe whether full_sort_predict works for this model
+    try:
+        probe = Interaction({"user_id": torch.tensor([1])}).to(config["device"])
+        model.full_sort_predict(probe)
+        log.info("Using full_sort_predict (fast path)")
+        rows = _score_via_full_sort(model, dataset, config, top_k)
+    except (NotImplementedError, TypeError, RuntimeError) as exc:
+        log.info("full_sort_predict unavailable (%s), falling back to pairwise predict", exc)
+        rows = _score_via_pairwise(model, dataset, config, top_k)
 
     scores_df = pd.DataFrame(rows)
     log.info("Extracted %s (user, item, score) tuples", f"{len(scores_df):,}")

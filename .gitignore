@@ -5,6 +5,10 @@ data/processed/
 
 # Model checkpoints
 output/models/
+output/results/
+
+# Local caches
+.cache/
 
 # Python
 __pycache__/
