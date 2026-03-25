@@ -163,6 +163,15 @@ def plot_tradeoff_curve(
         label="Operating points",
     )
 
+    # Annotate λ values on all operating points
+    for _, row in df.iterrows():
+        ax.annotate(
+            f"λ={row['lambda']:.2f}",
+            (row[carbon_key], row[engagement_key]),
+            textcoords="offset points", xytext=(5, 3),
+            fontsize=7, color="gray", alpha=0.7,
+        )
+
     # Pareto front
     ax.plot(
         front_df[carbon_key], front_df[engagement_key],
