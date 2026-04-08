@@ -1,0 +1,117 @@
+\begin{tikzpicture}[node distance=0.85cm]
+
+  \node[font=\small\bfseries, text=graytext] (hdr-l) at (0, 0)
+    {PCF estimation};
+  \node[font=\small\bfseries, text=graytext] (hdr-r) at (7.8, 0)
+    {Recommendation pipeline};
+
+  %% LEFT COLUMN
+  \node[dbnode, teal, below=0.5cm of hdr-l] (catalogue)
+    {\textbf{Carbon Catalogue}\sub{866 PCF labels (LCA)}};
+
+  \node[dbnode, amber, right=1.6cm of catalogue] (amazoncatalogue)
+    {\textbf{Amazon catalogue}\sub{Metadata: title, category}};
+
+  \node[procnode, purple, below=1.2cm of catalogue, xshift=2.0cm] (embedder)
+    {\textbf{Sentence embedder}\sub{Title + description}};
+
+  \node[procnode, purple,
+        minimum height=1.3cm, text width=3.8cm, minimum width=4.0cm,
+        below=0.8cm of embedder] (predictor)
+    {\textbf{PCF predictor (few-shot)}\\[2pt]
+     {\footnotesize\color{purpletext}
+      Query: Amazon item embedding\\
+      Context: 5 nearest Carbon\\
+      Catalogue neighbours}};
+
+  \node[dbnode, teal, below=0.8cm of predictor] (pcfstore)
+    {\textbf{PCF store}\sub{PCF$_i$ per Amazon item}};
+
+  \draw[solidarr]
+    (catalogue.south) -- ++(0, -0.35)
+    -| node[pos=0.2, below, font=\footnotesize, text=graystroke]
+       {Labelled embeddings}
+    (embedder.north west);
+
+  \draw[solidarr]
+    (amazoncatalogue.south) -- ++(0, -0.35)
+    -| node[pos=0.2, below, font=\footnotesize, text=graystroke]
+       {Query embeddings}
+    (embedder.north east);
+
+  \draw[solidarr, color=tealstroke]
+    ([xshift=-0.4cm] embedder.south)
+    -- node[left, font=\footnotesize, text=tealstroke] {5 nearest}
+    ([xshift=-0.4cm] predictor.north);
+
+  \draw[solidarr, color=amberstroke]
+    ([xshift=0.4cm] embedder.south)
+    -- node[right, font=\footnotesize, text=amberstroke] {query item}
+    ([xshift=0.4cm] predictor.north);
+
+  \draw[solidarr] (predictor) -- (pcfstore);
+
+  %% RIGHT COLUMN
+  \node[dbnode, amber, below=0.5cm of hdr-r] (reviews)
+    {\textbf{Amazon Reviews}\sub{Implicit user--item feedback}};
+
+  \node[procnode, gray, below=0.8cm of reviews] (dataprep)
+    {\textbf{Data preparation}\sub{Train / val / test split}};
+
+  \node[procnode, blue,
+        minimum height=2.4cm, text width=4.0cm, minimum width=4.2cm,
+        below=0.8cm of dataprep] (recbole)
+    {\textbf{RecBole models}\\[5pt]
+     {\footnotesize\ttfamily BPR \quad NeuMF}\\[2pt]
+     {\footnotesize\ttfamily SASRec \quad LightGCN}\\[4pt]
+     {\footnotesize\color{bluetext} Relevance scores $\hat{y}_{ui}$}};
+
+  \node[procnode, coral,
+        minimum height=1.5cm, text width=4.0cm, minimum width=4.2cm,
+        below=0.8cm of recbole] (reranker)
+    {\textbf{Carbon-aware re-ranker}\\[3pt]
+     {\small $s_{ui} = (1{-}\lambda)\,\hat{y}_{ui} - \lambda\,\mathrm{PCF}_i$}\\[2pt]
+     {\footnotesize\color{coraltext} $\lambda \in [0,\,1]$}};
+
+  \node[procnode, green, below=0.8cm of reranker] (topk)
+    {\textbf{Top-$K$ recommendations}\sub{Final ranked list}};
+
+  \draw[solidarr] (reviews)  -- (dataprep);
+  \draw[solidarr] (dataprep) -- (recbole);
+  \draw[solidarr] (recbole)  -- (reranker);
+  \draw[solidarr] (reranker) -- (topk);
+
+  %% CROSS-COLUMN: PCF store to re-ranker
+  \draw[crossarr]
+    (pcfstore.east) -- ++(0.6, 0)
+    |- node[pos=0.28, above, font=\footnotesize\bfseries, text=tealstroke]
+       {PCF$_i$}
+    (reranker.west);
+
+  %% EVALUATION TIER
+  \coordinate (divmid) at ($(topk.south) + (0, -1.0)$);
+  \draw[graystroke, dashed, line width=0.4pt, dash pattern=on 3pt off 4pt]
+    ($(divmid) + (-5.0, 0)$) -- ($(divmid) + (5.0, 0)$);
+  \node[font=\footnotesize\bfseries, text=graystroke, anchor=south]
+    at ($(divmid) + (0, 0.08)$) {Evaluation};
+
+  \node[procnode, blue,
+        minimum width=3.2cm, text width=3.0cm,
+        below=2.0cm of topk, xshift=-3.8cm] (engagement)
+    {\textbf{Engagement}\sub{NDCG@10, Recall@10}};
+
+  \node[procnode, teal,
+        minimum width=3.2cm, text width=3.0cm,
+        below=2.0cm of topk] (sustainability)
+    {\textbf{Sustainability}\sub{AvgPCF@10}};
+
+  \node[procnode, coral,
+        minimum width=3.2cm, text width=3.0cm,
+        below=2.0cm of topk, xshift=3.8cm] (pareto)
+    {\textbf{Pareto frontier}\sub{NDCG vs AvgPCF ($\lambda$ sweep)}};
+
+  \draw[solidarr] (topk.south) -- ++(0, -0.45) -| (engagement.north);
+  \draw[solidarr] (topk.south) -- (sustainability.north);
+  \draw[solidarr] (topk.south) -- ++(0, -0.45) -| (pareto.north);
+
+\end{tikzpicture}
