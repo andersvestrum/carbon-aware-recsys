@@ -1,0 +1,35 @@
+# NeuMF — Stage 2: MLP pretraining
+# Trains only the multi-layer perceptron branch of NeuMF.
+
+model: NeuMF
+mf_embedding_size: 64
+mlp_embedding_size: 64
+mlp_hidden_size: [128, 64, 32]
+dropout_prob: 0.1
+
+# Stage flags
+mf_train: False
+mlp_train: True
+use_pretrain: False
+
+epochs: 30
+train_batch_size: 2048
+learning_rate: 0.001
+neg_sampling:
+  uniform: 4
+
+user_inter_num_interval: "[5,inf)"
+item_inter_num_interval: "[5,inf)"
+
+eval_args:
+  split:
+    LS: valid_and_test
+  group_by: user
+  order: RO
+  mode: full
+
+metrics: [NDCG, Recall, MRR]
+topk: [10]
+valid_metric: NDCG@10
+stopping_step: 8
+show_progress: true
