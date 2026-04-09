@@ -445,14 +445,28 @@ def _run_job(category: str, model: str, args: argparse.Namespace, paths: dict[st
     log.info("[%s] Running %s/%s → %s", worker_name, category, model, log_path)
     with log_path.open("a", encoding="utf-8") as log_handle:
         for cmd in (common_train_args, common_rerank_args, common_eval_args):
-            subprocess.run(
-                cmd,
-                cwd=PROJECT_ROOT,
-                check=True,
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
+            try:
+                subprocess.run(
+                    cmd,
+                    cwd=PROJECT_ROOT,
+                    check=True,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                log_handle.flush()
+                tail = ""
+                try:
+                    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                    tail = "\n".join(lines[-40:])
+                except Exception:
+                    tail = "<could not read worker log>"
+                raise RuntimeError(
+                    f"Pipeline step failed for {category}/{model}. See log: {log_path}\n"
+                    f"Command: {' '.join(cmd)}\n"
+                    f"Last log lines:\n{tail}"
+                ) from exc
 
 
 def _worker_mode(args: argparse.Namespace) -> None:
