@@ -512,28 +512,62 @@ def _claim_next_job(
 
 def _mark_job_done(layout: Layout, category: str, model: str) -> None:
     paths = _job_paths(layout, category, model)
+    running_payload: dict[str, Any] = {}
+    if paths["running"].exists():
+        try:
+            running_payload = _read_json(paths["running"])
+        except Exception:
+            running_payload = {}
     paths["running"].unlink(missing_ok=True)
+    completed_at = time.time()
+    started_at = running_payload.get("started_at")
+    duration_seconds = None
+    if started_at is not None:
+        try:
+            duration_seconds = max(0.0, completed_at - float(started_at))
+        except (TypeError, ValueError):
+            duration_seconds = None
     _write_json(
         paths["done"],
         {
             "category": category,
             "model": model,
             "worker_name": layout.worker_name,
-            "completed_at": time.time(),
+            "started_at": started_at,
+            "heartbeat_at": running_payload.get("heartbeat_at"),
+            "completed_at": completed_at,
+            "duration_seconds": duration_seconds,
         },
     )
 
 
 def _mark_job_failed(layout: Layout, category: str, model: str, message: str) -> None:
     paths = _job_paths(layout, category, model)
+    running_payload: dict[str, Any] = {}
+    if paths["running"].exists():
+        try:
+            running_payload = _read_json(paths["running"])
+        except Exception:
+            running_payload = {}
     paths["running"].unlink(missing_ok=True)
+    failed_at = time.time()
+    started_at = running_payload.get("started_at")
+    duration_seconds = None
+    if started_at is not None:
+        try:
+            duration_seconds = max(0.0, failed_at - float(started_at))
+        except (TypeError, ValueError):
+            duration_seconds = None
     _write_json(
         paths["failed"],
         {
             "category": category,
             "model": model,
             "worker_name": layout.worker_name,
-            "failed_at": time.time(),
+            "started_at": started_at,
+            "heartbeat_at": running_payload.get("heartbeat_at"),
+            "failed_at": failed_at,
+            "duration_seconds": duration_seconds,
             "message": message,
         },
     )
