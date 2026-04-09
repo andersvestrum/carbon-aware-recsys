@@ -16,21 +16,9 @@ python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 ```
 
-## Current Pipeline
+## Workflow
 
-## Colab GPU Workflow
-
-For shared Google Drive runs across multiple Colab GPU sessions, use [run/colab_full_experiment.ipynb](run/colab_full_experiment.ipynb) for Session 1 and [run/colab_worker_session.ipynb](run/colab_worker_session.ipynb) for exactly one extra worker session.
-
-Recommended pattern:
-
-1. Open `run/colab_full_experiment.ipynb` and leave `MODE = "auto"` for the primary session.
-2. If you want one more GPU worker, open `run/colab_worker_session.ipynb` in a fresh Colab session and run all cells there.
-3. Use the final status cell in either notebook to inspect shared run state in `run/`.
-
-The notebook is intentionally thin. Most Colab-specific logic now lives in `scripts/06_colab_session.py`, which handles repo sync, dependency verification, GPU batch-size defaults, shared-run failure context, and dispatch into `scripts/05_run_full_experiment.py`.
-
-The worker mode uses atomic job claiming in `scripts/05_run_full_experiment.py`, so multiple Colab sessions can share the same `run/` directory without duplicating `(category, model)` jobs.
+This repository keeps the methodology as explicit stepwise scripts. Full-run orchestration helpers and checked-in Colab wrappers are intentionally removed.
 
 ### 1. Predict product carbon footprints
 
@@ -59,7 +47,7 @@ Outputs:
 
 ### 2. Train candidate generators
 
-Train one of the paper baselines:
+Train one of the paper baselines for a category:
 
 ```bash
 ./.venv/bin/python scripts/01_train_recommender.py --category electronics --model BPR
@@ -99,6 +87,20 @@ Outputs:
 - `output/figures/<category>_<model>_lambda_sensitivity.png`
 - `output/figures/all_categories_<model>_tradeoff.png`
 
+### 5. Generate paper plots
+
+After running the category/model evaluations you want to include, generate the paper figures referenced from `docs/main.tex`:
+
+```bash
+./.venv/bin/python scripts/04_generate_paper_plots.py
+```
+
+Outputs:
+
+- `docs/*.png` paper figures
+- `output/results/paper_plot_manifest.json`
+- `output/results/paper_metrics_summary.csv`
+
 ## Key Files
 
 - [docs/main.tex](docs/main.tex)
@@ -106,8 +108,7 @@ Outputs:
 - [scripts/01_train_recommender.py](scripts/01_train_recommender.py)
 - [scripts/02_rerank.py](scripts/02_rerank.py)
 - [scripts/03_evaluate.py](scripts/03_evaluate.py)
-- [scripts/05_run_full_experiment.py](scripts/05_run_full_experiment.py)
-- [scripts/06_colab_session.py](scripts/06_colab_session.py)
+- [scripts/04_generate_paper_plots.py](scripts/04_generate_paper_plots.py)
 - [src/carbon/retrieval.py](src/carbon/retrieval.py)
 - [src/recommender/trainer.py](src/recommender/trainer.py)
 - [src/reranking/carbon_reranker.py](src/reranking/carbon_reranker.py)
