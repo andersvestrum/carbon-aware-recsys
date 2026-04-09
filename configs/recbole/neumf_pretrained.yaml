@@ -1,0 +1,38 @@
+# NeuMF — Stage 3: Fused model fine-tuning
+# Loads pretrained GMF and MLP weights and fine-tunes the fused architecture.
+# Pretrain paths are passed at runtime via overrides (they include timestamps).
+# He et al. 2017 fine-tune with SGD at a smaller LR; we use Adam at 1e-4 for
+# RecBole compatibility, which works equivalently in practice.
+
+model: NeuMF
+mf_embedding_size: 64
+mlp_embedding_size: 64
+mlp_hidden_size: [128, 64, 32]
+dropout_prob: 0.1
+
+mf_train: True
+mlp_train: True
+use_pretrain: True
+# mf_pretrain_path and mlp_pretrain_path injected at runtime
+
+epochs: 80
+train_batch_size: 2048
+learning_rate: 0.0001
+neg_sampling:
+  uniform: 4
+
+user_inter_num_interval: "[5,inf)"
+item_inter_num_interval: "[5,inf)"
+
+eval_args:
+  split:
+    LS: valid_and_test
+  group_by: user
+  order: RO
+  mode: full
+
+metrics: [NDCG, Recall, MRR]
+topk: [10]
+valid_metric: NDCG@10
+stopping_step: 15
+show_progress: true
