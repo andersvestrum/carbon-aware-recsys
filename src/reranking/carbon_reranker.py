@@ -57,6 +57,38 @@ def normalise_engagement_per_user(scores_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def normalise_engagement_per_user_rank(scores_df: pd.DataFrame) -> pd.DataFrame:
+    """Rank-based normalisation: map engagement scores to uniform [0, 1].
+
+    Within each user's candidate set, items are ranked by engagement_score
+    and assigned evenly-spaced values (best → 1.0, worst → 0.0).  This
+    **erases** the original score distribution shape, producing an identical
+    engagement spread for every model — useful as an ablation to test whether
+    Pareto curve differences are driven by score-distribution shape vs.
+    which items each model ranks highly.
+
+    Args:
+        scores_df: Must contain ``user_id`` and ``engagement_score``.
+
+    Returns:
+        Copy with added ``engagement_norm`` column.
+    """
+    df = scores_df.copy()
+
+    def _rank_norm(x: pd.Series) -> pd.Series:
+        n = len(x)
+        if n <= 1:
+            return pd.Series(0.5, index=x.index)
+        # rank: 1 = lowest score, n = highest score → map to [0, 1]
+        ranks = x.rank(method="average")
+        return (ranks - 1) / (n - 1)
+
+    df["engagement_norm"] = (
+        df.groupby("user_id")["engagement_score"].transform(_rank_norm)
+    )
+    return df
+
+
 def normalise_carbon_global(carbon_series: pd.Series) -> pd.Series:
     """Min-max normalise carbon footprints to [0, 1] globally.
 
@@ -85,6 +117,12 @@ class CarbonReranker:
     """
 
     top_k: int = 10
+    norm_method: str = "minmax"  # "minmax" or "rank"
+
+    _NORM_FUNCTIONS = {
+        "minmax": normalise_engagement_per_user,
+        "rank": normalise_engagement_per_user_rank,
+    }
 
     def rerank(
         self,
@@ -111,7 +149,8 @@ class CarbonReranker:
             raise ValueError(f"λ must be in [0, 1], got {lam}")
 
         # 1. Normalise engagement per user
-        df = normalise_engagement_per_user(scores_df)
+        norm_fn = self._NORM_FUNCTIONS[self.norm_method]
+        df = norm_fn(scores_df)
 
         # 2. Join carbon footprints and normalise globally
         carbon_slim = carbon_df[["parent_asin", "pcf"]].drop_duplicates(
