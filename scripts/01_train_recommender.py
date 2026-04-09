@@ -275,10 +275,14 @@ def main():
 
     try:
         import recbole  # noqa: F401
-    except ImportError as exc:
+        from recbole.utils import get_model
+
+        get_model(args.model)
+    except Exception as exc:
         raise SystemExit(
-            "RecBole is required for candidate generation. "
-            "Install `recbole` and `torch` to run BPR, NeuMF, or LightGCN."
+            "RecBole candidate-generation dependencies are incomplete. "
+            "Install the full requirements, including `recbole`, `torch`, "
+            "and `kmeans-pytorch`, before running BPR, NeuMF, or LightGCN."
         ) from exc
 
     log.info("Running RecBole candidate generation with model=%s", args.model)

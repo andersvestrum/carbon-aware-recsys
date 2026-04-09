@@ -8,6 +8,7 @@ sentence-transformers>=2.7.0
 
 # Recommender System
 recbole>=1.1.1
+kmeans-pytorch>=0.3
 
 # Data
 gdown>=4.0.0
@@ -25,4 +26,3 @@ tqdm>=4.65.0
 pyyaml>=6.0
 joblib>=1.3.0
 openai>=1.30.0
-
