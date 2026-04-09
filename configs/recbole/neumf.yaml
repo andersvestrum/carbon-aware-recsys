@@ -8,6 +8,7 @@ model: NeuMF
 embedding_size: 64
 mlp_hidden_size: [128, 64, 32]
 dropout_prob: 0.1
+reg_weight: 1.0e-4
 
 # ── Training ──────────────────────────────────────────────────────────
 epochs: 50
@@ -15,7 +16,7 @@ train_batch_size: 2048
 learning_rate: 0.001
 neg_sampling:
   uniform: 1
-eval_step: 5
+eval_step: 3
 
 # ── Evaluation ────────────────────────────────────────────────────────
 eval_args:
@@ -31,7 +32,7 @@ valid_metric: NDCG@10
 eval_batch_size: 4096
 
 # ── Early stopping ───────────────────────────────────────────────────
-stopping_step: 10
+stopping_step: 8
 
 # ── Output ────────────────────────────────────────────────────────────
 show_progress: true
