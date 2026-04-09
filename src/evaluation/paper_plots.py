@@ -33,6 +33,9 @@ log = logging.getLogger(__name__)
 
 CATEGORY_ORDER = ["electronics", "home_and_kitchen", "sports_and_outdoors"]
 MODEL_ORDER = ["BPR", "LightGCN", "NeuMF"]
+# Pipeline output files use canonical RecBole names (e.g. NeuMF_pretrained);
+# paper figures use short display names. Map display → filesystem name here.
+MODEL_FILE_NAME = {"NeuMF": "NeuMF_pretrained"}
 METHOD_ORDER = ["neighbor_average", "zero_shot_llm", "few_shot_llm"]
 
 CATEGORY_LABELS = {
@@ -123,7 +126,8 @@ def load_reranking_results(
 
     for category in categories:
         for model in models:
-            metrics_path = Path(results_dir) / f"{category}_{model}_reranking_metrics.json"
+            file_model = MODEL_FILE_NAME.get(model, model)
+            metrics_path = Path(results_dir) / f"{category}_{file_model}_reranking_metrics.json"
             if not metrics_path.exists():
                 log.warning("Missing reranking metrics: %s", metrics_path)
                 continue

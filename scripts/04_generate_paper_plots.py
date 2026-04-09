@@ -74,7 +74,7 @@ def main() -> None:
     parser.add_argument(
         "--models",
         nargs="+",
-        default=["BPR", "LightGCN", "NeuMF"],
+        default=["BPR", "LightGCN", "NeuMF"],  # display names; file lookup uses MODEL_FILE_NAME
         help="Models to include",
     )
     args = parser.parse_args()
