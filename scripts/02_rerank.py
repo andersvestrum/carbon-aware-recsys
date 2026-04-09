@@ -87,6 +87,7 @@ def run_reranking(
     model_name: str = "BPR",
     lambda_values: list[float] | None = None,
     top_k: int = 10,
+    norm_method: str = "minmax",
     results_dir: Path | None = None,
     interim_dir: Path | None = None,
 ) -> dict:
@@ -154,7 +155,8 @@ def run_reranking(
         lambda_values = DEFAULT_LAMBDA_VALUES
 
     # ── Sweep λ ───────────────────────────────────────────────────────
-    reranker = CarbonReranker(top_k=top_k)
+    reranker = CarbonReranker(top_k=top_k, norm_method=norm_method)
+    log.info("Engagement normalisation: %s", norm_method)
     all_metrics: list[dict] = []
 
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +190,7 @@ def run_reranking(
     summary = {
         "category": category,
         "model": model_name,
+        "norm_method": norm_method,
         "baseline_carbon_kg": baseline["avg_carbon_kg"],
         f"baseline_NDCG@{top_k}": baseline[f"NDCG@{top_k}"],
         "greenest_lambda": greenest["lambda"],
@@ -253,6 +256,15 @@ def main():
         help="Number of items per user after re-ranking (default: from config)",
     )
     parser.add_argument(
+        "--norm-method",
+        type=str,
+        choices=["minmax", "rank"],
+        default="minmax",
+        help="Engagement normalisation method (default: minmax). "
+             "'rank' maps scores to uniform [0,1] by rank, erasing "
+             "score-distribution shape.",
+    )
+    parser.add_argument(
         "--results-dir",
         type=Path,
         default=RESULTS_DIR,
@@ -281,6 +293,7 @@ def main():
         result = run_reranking(
             category=cat,
             model_name=args.model,
+            norm_method=args.norm_method,
             lambda_values=lambda_values,
             top_k=top_k,
             results_dir=args.results_dir,
