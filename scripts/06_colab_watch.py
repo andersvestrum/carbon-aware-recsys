@@ -425,6 +425,23 @@ def _load_snapshot(
     return manifest, snapshots, mean_done_seconds
 
 
+def _render_uninitialized_snapshot(*, drive_root: Path) -> str:
+    manifest_path = drive_root / "state" / "jobs" / "manifest.json"
+    return "\n".join(
+        [
+            f"time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}",
+            f"drive_root: {drive_root}",
+            "queue: not initialized yet",
+            "",
+            f"waiting for manifest: {manifest_path}",
+            "",
+            "Next step:",
+            "  - run the primary notebook/session until `prepare` completes, or",
+            "  - verify that DRIVE_ROOT points at the same shared Colab workspace.",
+        ]
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Monitor the shared Colab runner queue")
     parser.add_argument("--drive-root", required=True, type=Path, help="Shared Drive workspace root")
@@ -456,17 +473,21 @@ def parse_args() -> argparse.Namespace:
 
 def _print_snapshot(args: argparse.Namespace) -> None:
     drive_root = args.drive_root.expanduser().resolve()
-    manifest, snapshots, _mean_done_seconds = _load_snapshot(
-        drive_root=drive_root,
-        tail_lines=args.tail_lines,
-    )
-    output = _render_snapshot(
-        drive_root=drive_root,
-        manifest=manifest,
-        snapshots=snapshots,
-        tail_lines=args.tail_lines,
-        parallelism=args.parallelism,
-    )
+    try:
+        manifest, snapshots, _mean_done_seconds = _load_snapshot(
+            drive_root=drive_root,
+            tail_lines=args.tail_lines,
+        )
+    except FileNotFoundError:
+        output = _render_uninitialized_snapshot(drive_root=drive_root)
+    else:
+        output = _render_snapshot(
+            drive_root=drive_root,
+            manifest=manifest,
+            snapshots=snapshots,
+            tail_lines=args.tail_lines,
+            parallelism=args.parallelism,
+        )
     print(output)
 
 
