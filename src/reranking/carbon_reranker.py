@@ -205,12 +205,18 @@ def compute_reranking_metrics(
     test_slim = test_interactions[["user_id", "parent_asin"]].drop_duplicates(
         subset="user_id"
     )
-    hits = topk.merge(test_slim, on=["user_id", "parent_asin"], how="inner")
+    # Denominator: users in the test set who ALSO have recommendations
+    # (matches the old loop's behaviour of skipping empty-rec users)
+    rec_users = set(topk["user_id"].unique())
+    test_with_recs = test_slim[test_slim["user_id"].isin(rec_users)]
 
+    hits = topk.merge(
+        test_with_recs, on=["user_id", "parent_asin"], how="inner"
+    )
     # Only the first hit per user matters (rank column is 1-indexed)
     hits = hits.sort_values("rank").drop_duplicates(subset="user_id", keep="first")
 
-    n_users = int(test_slim["user_id"].nunique())
+    n_users = int(test_with_recs["user_id"].nunique())
     if n_users == 0:
         ndcg = recall = mrr = 0.0
     else:
