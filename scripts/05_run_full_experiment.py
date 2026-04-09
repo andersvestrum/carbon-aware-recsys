@@ -32,6 +32,11 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CATEGORIES = ["electronics", "home_and_kitchen", "sports_and_outdoors"]
 DEFAULT_MODELS = ["BPR", "NeuMF", "LightGCN"]
+PREPROCESS_CATEGORY_MAP = {
+    "electronics": "electronics",
+    "home_and_kitchen": "hak",
+    "sports_and_outdoors": "sao",
+}
 
 
 def _run_paths(run_dir: Path) -> dict[str, Path]:
@@ -79,6 +84,59 @@ def _dataset_summary(interim_dir: Path, categories: list[str], top_k_candidates:
                 }
             )
     return pd.DataFrame(rows)
+
+
+def _missing_interim_files(interim_dir: Path, categories: list[str]) -> list[Path]:
+    missing: list[Path] = []
+    for category in categories:
+        for split in ["train", "val", "test"]:
+            path = interim_dir / split / f"{category}.csv"
+            if not path.exists():
+                missing.append(path)
+    return missing
+
+
+def _ensure_interim_data(args: argparse.Namespace) -> None:
+    missing = _missing_interim_files(args.interim_dir, args.categories)
+    if not missing:
+        return
+
+    default_interim_dir = PROJECT_ROOT / "data" / "interim"
+    if args.interim_dir.resolve() != default_interim_dir.resolve():
+        missing_display = "\n".join(str(path) for path in missing[:6])
+        raise FileNotFoundError(
+            "Missing interim files for the requested run and automatic bootstrap "
+            "only supports the default project interim directory.\n"
+            f"Expected files under: {args.interim_dir}\n"
+            f"Examples:\n{missing_display}"
+        )
+
+    preprocess_categories = []
+    for category in args.categories:
+        try:
+            preprocess_categories.append(PREPROCESS_CATEGORY_MAP[category])
+        except KeyError as exc:
+            raise ValueError(f"Unsupported preprocessing category: {category}") from exc
+
+    log.info(
+        "Interim data missing for %d file(s). Bootstrapping raw downloads + preprocessing for %s",
+        len(missing),
+        ", ".join(args.categories),
+    )
+    from src.data.preprocess import merge_meta_with_interactions
+
+    merge_meta_with_interactions(
+        force_download=False,
+        categories=preprocess_categories,
+    )
+
+    missing_after = _missing_interim_files(args.interim_dir, args.categories)
+    if missing_after:
+        missing_display = "\n".join(str(path) for path in missing_after[:6])
+        raise FileNotFoundError(
+            "Automatic interim-data bootstrap completed but some files are still missing.\n"
+            f"Examples:\n{missing_display}"
+        )
 
 
 def _default_parallelism(requested: int | None) -> int:
@@ -409,6 +467,7 @@ def _prepare_inputs(args: argparse.Namespace, paths: dict[str, Path]) -> None:
     state_dir = _job_state_dir(paths)
 
     def _prepare_dataset_cache() -> None:
+        _ensure_interim_data(args)
         summary_df = _dataset_summary(args.interim_dir, args.categories, args.top_k_candidates)
         summary_path = paths["results_dir"] / "dataset_summary.csv"
         summary_df.to_csv(summary_path, index=False)
