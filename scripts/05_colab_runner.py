@@ -53,6 +53,11 @@ DEFAULT_MODELS = ["BPR", "NeuMF", "LightGCN"]
 JOB_POLL_SECONDS = 30
 HEARTBEAT_INTERVAL_SECONDS = 60
 STALE_TIMEOUT_SECONDS = 15 * 60
+PREPROCESS_CATEGORY_MAP = {
+    "electronics": "electronics",
+    "home_and_kitchen": "hak",
+    "sports_and_outdoors": "sao",
+}
 
 
 @dataclass(frozen=True)
@@ -227,25 +232,49 @@ def _ensure_drive_dirs(layout: Layout) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def _run_preprocess_for_interim(layout: Layout, categories: list[str]) -> None:
+    preprocess_categories = [PREPROCESS_CATEGORY_MAP[category] for category in categories]
+    cmd = [
+        sys.executable,
+        "-m",
+        "src.data.preprocess",
+        "--category",
+        *preprocess_categories,
+    ]
+    log.info("Generating missing interim data in repo checkout …")
+    subprocess.run(cmd, cwd=layout.repo_root, check=True)
+
+
 def _ensure_interim_on_drive(layout: Layout, categories: list[str]) -> None:
-    missing: list[Path] = []
-    for split in ["train", "val", "test"]:
-        for category in categories:
-            drive_path = layout.drive_interim_dir / split / f"{category}.csv"
-            if drive_path.exists():
-                continue
-            repo_path = layout.repo_root / "data" / "interim" / split / f"{category}.csv"
-            if _copy_if_missing(repo_path, drive_path):
-                log.info("Bootstrapped interim split → %s", drive_path)
-                continue
-            missing.append(drive_path)
+    def _copy_missing_to_drive() -> list[Path]:
+        missing_paths: list[Path] = []
+        for split in ["train", "val", "test"]:
+            for category in categories:
+                drive_path = layout.drive_interim_dir / split / f"{category}.csv"
+                if drive_path.exists():
+                    continue
+                repo_path = layout.repo_root / "data" / "interim" / split / f"{category}.csv"
+                if _copy_if_missing(repo_path, drive_path):
+                    log.info("Bootstrapped interim split → %s", drive_path)
+                    continue
+                missing_paths.append(drive_path)
+        return missing_paths
+
+    missing = _copy_missing_to_drive()
+    if missing:
+        try:
+            _run_preprocess_for_interim(layout, categories)
+        except subprocess.CalledProcessError as exc:
+            log.warning("Automatic interim preprocessing failed: %r", exc)
+        missing = _copy_missing_to_drive()
 
     if missing:
         joined = "\n".join(f"  - {path}" for path in missing)
         raise FileNotFoundError(
             "Missing required interim data on Drive. "
-            "Populate the following files or keep them available under "
-            "`repo_root/data/interim` before rerunning prepare:\n"
+            "The runner also tried to build `repo_root/data/interim` automatically, "
+            "but the required files are still missing. Populate the following files "
+            "on Drive or make sure preprocessing can run successfully:\n"
             f"{joined}"
         )
 
