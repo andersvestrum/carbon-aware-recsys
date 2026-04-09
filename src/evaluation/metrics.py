@@ -17,11 +17,24 @@ Metrics:
 
 from __future__ import annotations
 
+import os
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any
 
+_MPLCONFIGDIR = Path(
+    os.environ.get(
+        "MPLCONFIGDIR",
+        str(Path(tempfile.gettempdir()) / "carbon-aware-recsys-mpl"),
+    )
+)
+_MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
+os.environ["MPLCONFIGDIR"] = str(_MPLCONFIGDIR)
+
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -46,7 +59,7 @@ def pareto_frontier(
     higher engagement *and* lower carbon.
 
     Args:
-        metrics: List of per-λ metric dicts (from ``03_rerank.py``).
+        metrics: List of per-λ metric dicts (from ``02_rerank.py``).
         engagement_key: Key for the engagement metric (to maximise).
         carbon_key: Key for the carbon metric (to minimise).
 
@@ -133,6 +146,7 @@ def plot_tradeoff_curve(
     model_name: str = "BPR",
     engagement_key: str = "NDCG@10",
     carbon_key: str = "avg_carbon_kg",
+    figures_dir: Path | None = None,
     save: bool = True,
     show: bool = False,
 ) -> plt.Figure:
@@ -209,8 +223,9 @@ def plot_tradeoff_curve(
     fig.tight_layout()
 
     if save:
-        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-        fig_path = FIGURES_DIR / f"{category}_{model_name}_tradeoff.png"
+        figures_dir = figures_dir or FIGURES_DIR
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig_path = figures_dir / f"{category}_{model_name}_tradeoff.png"
         fig.savefig(fig_path, dpi=150, bbox_inches="tight")
         log.info("Saved trade-off plot → %s", fig_path)
 
@@ -225,6 +240,7 @@ def plot_multi_category(
     model_name: str = "BPR",
     engagement_key: str = "NDCG@10",
     carbon_key: str = "avg_carbon_kg",
+    figures_dir: Path | None = None,
     save: bool = True,
     show: bool = False,
 ) -> plt.Figure:
@@ -274,8 +290,9 @@ def plot_multi_category(
     fig.tight_layout()
 
     if save:
-        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-        fig_path = FIGURES_DIR / f"all_categories_{model_name}_tradeoff.png"
+        figures_dir = figures_dir or FIGURES_DIR
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig_path = figures_dir / f"all_categories_{model_name}_tradeoff.png"
         fig.savefig(fig_path, dpi=150, bbox_inches="tight")
         log.info("Saved multi-category plot → %s", fig_path)
 
@@ -291,6 +308,7 @@ def plot_lambda_sensitivity(
     model_name: str = "BPR",
     engagement_key: str = "NDCG@10",
     carbon_key: str = "avg_carbon_kg",
+    figures_dir: Path | None = None,
     save: bool = True,
     show: bool = False,
 ) -> plt.Figure:
@@ -330,8 +348,9 @@ def plot_lambda_sensitivity(
     fig.tight_layout()
 
     if save:
-        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-        fig_path = FIGURES_DIR / f"{category}_{model_name}_lambda_sensitivity.png"
+        figures_dir = figures_dir or FIGURES_DIR
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig_path = figures_dir / f"{category}_{model_name}_lambda_sensitivity.png"
         fig.savefig(fig_path, dpi=150, bbox_inches="tight")
         log.info("Saved λ-sensitivity plot → %s", fig_path)
 
@@ -348,10 +367,12 @@ def evaluate_category(
     model_name: str = "BPR",
     engagement_key: str = "NDCG@10",
     carbon_key: str = "avg_carbon_kg",
+    results_dir: Path | None = None,
+    figures_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Run full evaluation for one category.
 
-    Loads the reranking metrics JSON produced by ``03_rerank.py``,
+    Loads the reranking metrics JSON produced by ``02_rerank.py``,
     computes the Pareto frontier, builds a summary table, and
     generates all plots.
 
@@ -359,11 +380,12 @@ def evaluate_category(
         Dict with ``summary_table``, ``pareto_points``, ``baseline``,
         ``best_tradeoff``.
     """
-    metrics_path = RESULTS_DIR / f"{category}_{model_name}_reranking_metrics.json"
+    results_dir = results_dir or RESULTS_DIR
+    metrics_path = results_dir / f"{category}_{model_name}_reranking_metrics.json"
     if not metrics_path.exists():
         raise FileNotFoundError(
             f"Reranking metrics not found at {metrics_path}. "
-            "Run 03_rerank.py first."
+            "Run 02_rerank.py first."
         )
 
     with open(metrics_path) as f:
@@ -394,17 +416,31 @@ def evaluate_category(
         best_tradeoff = sorted(front, key=lambda p: -p[engagement_key])[1]
 
     # Plots
-    plot_tradeoff_curve(per_lambda, category, model_name, engagement_key, carbon_key)
-    plot_lambda_sensitivity(per_lambda, category, model_name, engagement_key, carbon_key)
+    plot_tradeoff_curve(
+        per_lambda,
+        category,
+        model_name,
+        engagement_key,
+        carbon_key,
+        figures_dir=figures_dir,
+    )
+    plot_lambda_sensitivity(
+        per_lambda,
+        category,
+        model_name,
+        engagement_key,
+        carbon_key,
+        figures_dir=figures_dir,
+    )
 
     # Save summary table
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    table_path = RESULTS_DIR / f"{category}_{model_name}_evaluation_summary.csv"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    table_path = results_dir / f"{category}_{model_name}_evaluation_summary.csv"
     summary_df.to_csv(table_path, index=False)
     log.info("Saved evaluation summary → %s", table_path)
 
     # Save Pareto points
-    pareto_path = RESULTS_DIR / f"{category}_{model_name}_pareto.json"
+    pareto_path = results_dir / f"{category}_{model_name}_pareto.json"
     with open(pareto_path, "w") as f:
         json.dump(front, f, indent=2)
     log.info("Saved Pareto frontier → %s", pareto_path)

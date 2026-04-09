@@ -7,12 +7,12 @@ Pareto-optimal operating points, and generates visualisations.
 
 Pipeline context:
     1. RecBole → top-K candidates with relevance scores
-    2. DeepFM → engagement prediction on candidates
+    2. Carbon-aware re-ranking using RecBole relevance scores
     3. Carbon re-ranking → re-ranked lists + metrics per λ
     4. **This script** → Pareto frontier, summary tables, plots
 
 Inputs:
-    output/results/<category>_<model>_reranking_metrics.json  (from 03_rerank.py)
+    output/results/<category>_<model>_reranking_metrics.json  (from 02_rerank.py)
 
 Outputs:
     output/results/<category>_<model>_evaluation_summary.csv  — full summary table
@@ -22,9 +22,9 @@ Outputs:
     output/figures/all_categories_<model>_tradeoff.png        — cross-category comparison
 
 Usage:
-    python scripts/04_evaluate.py                            # all categories
-    python scripts/04_evaluate.py --category electronics
-    python scripts/04_evaluate.py --model LightGCN
+    python scripts/03_evaluate.py                            # all categories
+    python scripts/03_evaluate.py --category electronics
+    python scripts/03_evaluate.py --model LightGCN
 """
 
 from __future__ import annotations
@@ -39,6 +39,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.recommender import SUPPORTED_MODELS, canonical_model_name
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
@@ -48,6 +50,7 @@ log = logging.getLogger(__name__)
 
 ALL_CATEGORIES = ["electronics", "home_and_kitchen", "sports_and_outdoors"]
 RESULTS_DIR = PROJECT_ROOT / "output" / "results"
+FIGURES_DIR = PROJECT_ROOT / "output" / "figures"
 
 
 def main():
@@ -57,14 +60,28 @@ def main():
     parser.add_argument(
         "--category",
         type=str,
+        choices=ALL_CATEGORIES,
         default=None,
         help="Category to evaluate (default: all three)",
     )
     parser.add_argument(
         "--model",
-        type=str,
+        type=canonical_model_name,
+        choices=SUPPORTED_MODELS,
         default="BPR",
-        help="Model name matching the metrics file (default: BPR)",
+        help="Candidate generation model used in the paper (default: BPR)",
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=RESULTS_DIR,
+        help="Directory containing reranking metrics and evaluation summaries",
+    )
+    parser.add_argument(
+        "--figures-dir",
+        type=Path,
+        default=FIGURES_DIR,
+        help="Directory where evaluation figures are written",
     )
     args = parser.parse_args()
 
@@ -84,7 +101,12 @@ def main():
         log.info("=" * 60)
 
         try:
-            result = evaluate_category(cat, args.model)
+            result = evaluate_category(
+                cat,
+                args.model,
+                results_dir=args.results_dir,
+                figures_dir=args.figures_dir,
+            )
         except FileNotFoundError as e:
             log.error("  Skipping %s: %s", cat, e)
             continue
@@ -124,7 +146,7 @@ def main():
             )
 
         # Load per_lambda for multi-category plot
-        metrics_path = RESULTS_DIR / f"{cat}_{args.model}_reranking_metrics.json"
+        metrics_path = args.results_dir / f"{cat}_{args.model}_reranking_metrics.json"
         if metrics_path.exists():
             with open(metrics_path) as f:
                 data = json.load(f)
@@ -135,7 +157,7 @@ def main():
         log.info("=" * 60)
         log.info("Generating cross-category comparison plot")
         log.info("=" * 60)
-        plot_multi_category(all_cat_metrics, args.model)
+        plot_multi_category(all_cat_metrics, args.model, figures_dir=args.figures_dir)
 
     log.info("")
     log.info("Evaluation complete. Check output/figures/ and output/results/.")
