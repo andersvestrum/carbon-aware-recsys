@@ -25,7 +25,9 @@ This repository keeps the methodology as explicit stepwise scripts.
 For the fastest Colab setup, use:
 
 - [notebooks/colab_runner.ipynb](notebooks/colab_runner.ipynb)
+- [notebooks/colab_watch.ipynb](notebooks/colab_watch.ipynb)
 - [scripts/05_colab_runner.py](scripts/05_colab_runner.py)
+- [scripts/06_colab_watch.py](scripts/06_colab_watch.py)
 
 Recommended pattern:
 
@@ -127,7 +129,9 @@ Outputs:
 - [scripts/03_evaluate.py](scripts/03_evaluate.py)
 - [scripts/04_generate_paper_plots.py](scripts/04_generate_paper_plots.py)
 - [scripts/05_colab_runner.py](scripts/05_colab_runner.py)
+- [scripts/06_colab_watch.py](scripts/06_colab_watch.py)
 - [notebooks/colab_runner.ipynb](notebooks/colab_runner.ipynb)
+- [notebooks/colab_watch.ipynb](notebooks/colab_watch.ipynb)
 - [src/carbon/retrieval.py](src/carbon/retrieval.py)
 - [src/recommender/trainer.py](src/recommender/trainer.py)
 - [src/reranking/carbon_reranker.py](src/reranking/carbon_reranker.py)
