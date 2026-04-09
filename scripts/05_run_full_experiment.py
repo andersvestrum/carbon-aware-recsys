@@ -237,11 +237,25 @@ def _claim_next_job(
     jobs: list[tuple[str, str]],
     *,
     worker_name: str,
+    retry_failed_jobs: bool = False,
 ) -> tuple[str, str] | None:
     for category, model in jobs:
         state_paths = _job_state_paths(paths, category, model)
-        if state_paths["done"].exists() or state_paths["failed"].exists():
+        if state_paths["done"].exists():
             continue
+        if state_paths["failed"].exists():
+            if not retry_failed_jobs:
+                continue
+            try:
+                state_paths["failed"].unlink()
+                log.info(
+                    "[%s] Retrying previously failed job %s/%s",
+                    worker_name,
+                    category,
+                    model,
+                )
+            except FileNotFoundError:
+                pass
         if _claim_file(
             state_paths["running"],
             {
@@ -569,7 +583,12 @@ def _claim_mode(args: argparse.Namespace, paths: dict[str, Path]) -> None:
 
     claimed_count = 0
     while True:
-        job = _claim_next_job(paths, jobs, worker_name=worker_name)
+        job = _claim_next_job(
+            paths,
+            jobs,
+            worker_name=worker_name,
+            retry_failed_jobs=args.retry_failed_jobs,
+        )
         if job is None:
             break
 
@@ -758,6 +777,11 @@ def main() -> None:
         "--finalize-when-done",
         action="store_true",
         help="In claim mode, generate plots if all jobs are complete",
+    )
+    parser.add_argument(
+        "--retry-failed-jobs",
+        action="store_true",
+        help="Allow claim mode to retry jobs previously marked as failed",
     )
     parser.add_argument("--force", action="store_true", help="Ignore cached train/rerank/eval outputs")
     parser.add_argument("--force-carbon", action="store_true", help="Ignore cached carbon outputs")

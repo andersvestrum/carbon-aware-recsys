@@ -24,11 +24,13 @@ For shared Google Drive runs across multiple Colab GPU sessions, use [run/colab_
 
 Recommended pattern:
 
-1. Run one `prepare` session to build shared caches in `run/`.
-2. Run several `worker` sessions in parallel, each with a unique worker name.
-3. Run one `finalize` session to generate the paper plots after all jobs complete.
+1. Open the notebook and leave `MODE = "auto"` for a single-session run.
+2. Open additional Colab sessions with `MODE = "worker"` if you want parallel job claiming.
+3. Use the final status cell to inspect shared run state in `run/`.
 
-The worker mode uses atomic job claiming in `scripts/05_run_full_experiment.py`, so multiple Colab notebooks can share the same `run/` directory without duplicating `(category, model)` jobs.
+The notebook is intentionally thin. Most Colab-specific logic now lives in `scripts/06_colab_session.py`, which handles repo sync, dependency verification, GPU batch-size defaults, shared-run failure context, and dispatch into `scripts/05_run_full_experiment.py`.
+
+The worker mode uses atomic job claiming in `scripts/05_run_full_experiment.py`, so multiple Colab sessions can share the same `run/` directory without duplicating `(category, model)` jobs.
 
 ### 1. Predict product carbon footprints
 
@@ -104,6 +106,8 @@ Outputs:
 - [scripts/01_train_recommender.py](scripts/01_train_recommender.py)
 - [scripts/02_rerank.py](scripts/02_rerank.py)
 - [scripts/03_evaluate.py](scripts/03_evaluate.py)
+- [scripts/05_run_full_experiment.py](scripts/05_run_full_experiment.py)
+- [scripts/06_colab_session.py](scripts/06_colab_session.py)
 - [src/carbon/retrieval.py](src/carbon/retrieval.py)
 - [src/recommender/trainer.py](src/recommender/trainer.py)
 - [src/reranking/carbon_reranker.py](src/reranking/carbon_reranker.py)

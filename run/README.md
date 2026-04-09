@@ -4,7 +4,7 @@ This folder is the Colab-friendly experiment workspace for the current `docs/mai
 
 It holds:
 
-- `colab_full_experiment.ipynb`: shared Colab notebook with a default `auto` mode that mounts Drive, clones or updates the repo, prepares caches, claims jobs, and finalizes plots
+- `colab_full_experiment.ipynb`: thin Colab wrapper with only mount, config, run, and status cells
 - `cache/`: cached RecBole benchmark data, checkpoints, and optional carbon outputs
 - `results/`: score files, reranking metrics, manifests, and summary CSVs
 - `figures/`: paper-ready plots referenced from the Results section
@@ -16,6 +16,12 @@ The main runner is still:
 python scripts/05_run_full_experiment.py --run-dir run
 ```
 
+The Colab helper runner is now:
+
+```bash
+python scripts/06_colab_session.py --project-root . --mode auto --install --verify-runtime
+```
+
 For a single-machine run, that command will:
 
 1. audit the interim timestamp splits,
@@ -25,12 +31,12 @@ For a single-machine run, that command will:
 5. evaluate the Pareto trade-offs, and
 6. generate the paper plots into `run/figures/`.
 
-For parallel Colab GPU runs, the notebook is now designed so each session can usually just press "Run all":
+For parallel Colab GPU runs, the notebook is now intentionally minimal:
 
 1. Open the notebook in one or more Colab GPU sessions.
-2. Leave `MODE = 'auto'` unless you specifically want `prepare`, `worker`, or `finalize` only.
-3. Let the notebook clone or update `carbon-aware-recsys` in `MyDrive/` automatically.
-4. Run all cells in each worker session.
+2. Set `MODE = 'auto'` for a one-session run, or `MODE = 'worker'` in extra sessions.
+3. Run all cells.
+4. Let `scripts/06_colab_session.py` handle repo sync, dependency checks, batch-size defaults, and mode dispatch.
 5. Let each worker claim jobs from the shared `run/results/_job_state/` directory.
 
 The parallel flow is safe because `scripts/05_run_full_experiment.py` atomically prepares shared inputs, claims pending `(category, model)` jobs, and finalizes plots once when the last worker finishes.
