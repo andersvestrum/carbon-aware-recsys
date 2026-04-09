@@ -159,10 +159,7 @@ def run_reranking(
         )
         all_metrics.append(metrics)
 
-        # Save re-ranked lists for each λ value
-        lam_str = f"{lam:.3f}"
-        out_path = RESULTS_DIR / f"{category}_{model_name}_reranked_{lam_str}.parquet"
-        ranked.to_parquet(out_path, index=False)
+        # Skip per-λ parquet writes — metrics JSON is sufficient for the sweep
 
         log.info(
             "  λ=%5.3f  NDCG@%d=%.4f  carbon=%.2f kg  (%s users)",

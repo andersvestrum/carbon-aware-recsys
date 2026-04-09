@@ -196,37 +196,35 @@ def compute_reranking_metrics(
         Dict with keys: ``lambda``, ``avg_carbon_kg``, ``NDCG@k``,
         ``Recall@k``, ``MRR``, ``n_users``.
     """
-    # Build test set lookup: user → test item
-    test_lookup = test_interactions.set_index("user_id")["parent_asin"].to_dict()
+    avg_carbon = float(ranked_df["pcf"].mean())
 
-    avg_carbon = ranked_df["pcf"].mean()
+    # Keep only top-k rows per user (ranked_df is already top-k, but be safe)
+    topk = ranked_df[ranked_df["rank"] <= k]
 
-    ndcg_vals, recall_vals, mrr_vals = [], [], []
+    # Vectorised hit lookup: join on (user_id, parent_asin) against test items
+    test_slim = test_interactions[["user_id", "parent_asin"]].drop_duplicates(
+        subset="user_id"
+    )
+    hits = topk.merge(test_slim, on=["user_id", "parent_asin"], how="inner")
 
-    for user_id, test_item in test_lookup.items():
-        user_recs = ranked_df[ranked_df["user_id"] == user_id]
-        if user_recs.empty:
-            continue
+    # Only the first hit per user matters (rank column is 1-indexed)
+    hits = hits.sort_values("rank").drop_duplicates(subset="user_id", keep="first")
 
-        rec_items = user_recs.sort_values("rank")["parent_asin"].values[:k]
-        hit = np.where(rec_items == test_item)[0]
-
-        if len(hit) > 0:
-            pos = hit[0] + 1
-            ndcg_vals.append(1.0 / np.log2(pos + 1))
-            recall_vals.append(1.0)
-            mrr_vals.append(1.0 / pos)
-        else:
-            ndcg_vals.append(0.0)
-            recall_vals.append(0.0)
-            mrr_vals.append(0.0)
+    n_users = int(test_slim["user_id"].nunique())
+    if n_users == 0:
+        ndcg = recall = mrr = 0.0
+    else:
+        pos = hits["rank"].to_numpy()
+        ndcg = float((1.0 / np.log2(pos + 1)).sum() / n_users)
+        recall = float(len(hits) / n_users)
+        mrr = float((1.0 / pos).sum() / n_users)
 
     return {
         "lambda": float(lam),
-        "avg_carbon_kg": float(avg_carbon),
-        f"NDCG@{k}": float(np.mean(ndcg_vals)) if ndcg_vals else 0.0,
-        f"Recall@{k}": float(np.mean(recall_vals)) if recall_vals else 0.0,
-        "MRR": float(np.mean(mrr_vals)) if mrr_vals else 0.0,
+        "avg_carbon_kg": avg_carbon,
+        f"NDCG@{k}": ndcg,
+        f"Recall@{k}": recall,
+        "MRR": mrr,
         "n_users": int(ranked_df["user_id"].nunique()),
     }
 
