@@ -10,10 +10,12 @@ import itertools
 import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -43,6 +45,12 @@ def _run_paths(run_dir: Path) -> dict[str, Path]:
         "figures_dir": run_dir / "figures",
         "logs_dir": run_dir / "logs",
     }
+
+
+def _job_state_dir(paths: dict[str, Path]) -> Path:
+    path = paths["results_dir"] / "_job_state"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _ensure_run_dirs(paths: dict[str, Path]) -> None:
@@ -89,6 +97,139 @@ def _default_parallelism(requested: int | None) -> int:
     if gpu_count == 1:
         return 1
     return 1
+
+
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+
+
+def _claim_file(path: Path, payload: dict[str, object]) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+    return True
+
+
+def _run_once(
+    *,
+    lock_path: Path,
+    done_path: Path,
+    description: str,
+    worker_name: str,
+    fn: Callable[[], None],
+) -> None:
+    while True:
+        if done_path.exists():
+            return
+
+        if _claim_file(
+            lock_path,
+            {
+                "description": description,
+                "worker_name": worker_name,
+                "started_at": time.time(),
+            },
+        ):
+            break
+        time.sleep(5)
+
+    try:
+        if done_path.exists():
+            return
+        fn()
+        _write_json(
+            done_path,
+            {
+                "description": description,
+                "worker_name": worker_name,
+                "completed_at": time.time(),
+            },
+        )
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _job_slug(category: str, model: str) -> str:
+    return f"{category}__{model}"
+
+
+def _job_state_paths(paths: dict[str, Path], category: str, model: str) -> dict[str, Path]:
+    slug = _job_slug(category, model)
+    state_dir = _job_state_dir(paths)
+    return {
+        "running": state_dir / f"{slug}.running.json",
+        "done": state_dir / f"{slug}.done.json",
+        "failed": state_dir / f"{slug}.failed.json",
+    }
+
+
+def _all_jobs_done(paths: dict[str, Path], jobs: list[tuple[str, str]]) -> bool:
+    return all(_job_state_paths(paths, category, model)["done"].exists() for category, model in jobs)
+
+
+def _claim_next_job(
+    paths: dict[str, Path],
+    jobs: list[tuple[str, str]],
+    *,
+    worker_name: str,
+) -> tuple[str, str] | None:
+    for category, model in jobs:
+        state_paths = _job_state_paths(paths, category, model)
+        if state_paths["done"].exists() or state_paths["failed"].exists():
+            continue
+        if _claim_file(
+            state_paths["running"],
+            {
+                "category": category,
+                "model": model,
+                "worker_name": worker_name,
+                "started_at": time.time(),
+            },
+        ):
+            return category, model
+    return None
+
+
+def _mark_job_done(paths: dict[str, Path], category: str, model: str, worker_name: str) -> None:
+    state_paths = _job_state_paths(paths, category, model)
+    state_paths["running"].unlink(missing_ok=True)
+    _write_json(
+        state_paths["done"],
+        {
+            "category": category,
+            "model": model,
+            "worker_name": worker_name,
+            "completed_at": time.time(),
+        },
+    )
+
+
+def _mark_job_failed(
+    paths: dict[str, Path],
+    category: str,
+    model: str,
+    worker_name: str,
+    message: str,
+) -> None:
+    state_paths = _job_state_paths(paths, category, model)
+    state_paths["running"].unlink(missing_ok=True)
+    _write_json(
+        state_paths["failed"],
+        {
+            "category": category,
+            "model": model,
+            "worker_name": worker_name,
+            "failed_at": time.time(),
+            "message": message,
+        },
+    )
 
 
 def _prepare_recbole_cache(args: argparse.Namespace, paths: dict[str, Path]) -> None:
@@ -175,18 +316,17 @@ def _prepare_carbon_predictions(args: argparse.Namespace, paths: dict[str, Path]
     subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
 
 
-def _worker_mode(args: argparse.Namespace) -> None:
-    run_dir = args.run_dir.resolve()
-    paths = _run_paths(run_dir)
-    _ensure_run_dirs(paths)
-
+def _run_job(category: str, model: str, args: argparse.Namespace, paths: dict[str, Path]) -> None:
+    worker_name = args.worker_name or socket.gethostname()
+    log_path = paths["logs_dir"] / f"{category}_{model}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     common_train_args = [
         sys.executable,
         str(PROJECT_ROOT / "scripts" / "01_train_recommender.py"),
         "--category",
-        args.worker_category,
+        category,
         "--model",
-        args.worker_model,
+        model,
         "--top-k",
         str(args.top_k_candidates),
         "--score-split",
@@ -221,9 +361,9 @@ def _worker_mode(args: argparse.Namespace) -> None:
         sys.executable,
         str(PROJECT_ROOT / "scripts" / "02_rerank.py"),
         "--category",
-        args.worker_category,
+        category,
         "--model",
-        args.worker_model,
+        model,
         "--top-k",
         str(args.top_k_rerank),
         "--results-dir",
@@ -235,17 +375,148 @@ def _worker_mode(args: argparse.Namespace) -> None:
         sys.executable,
         str(PROJECT_ROOT / "scripts" / "03_evaluate.py"),
         "--category",
-        args.worker_category,
+        category,
         "--model",
-        args.worker_model,
+        model,
         "--results-dir",
         str(paths["results_dir"]),
         "--figures-dir",
         str(paths["figures_dir"]),
     ]
 
-    for cmd in (common_train_args, common_rerank_args, common_eval_args):
-        subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
+    log.info("[%s] Running %s/%s → %s", worker_name, category, model, log_path)
+    with log_path.open("a", encoding="utf-8") as log_handle:
+        for cmd in (common_train_args, common_rerank_args, common_eval_args):
+            subprocess.run(
+                cmd,
+                cwd=PROJECT_ROOT,
+                check=True,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+
+
+def _worker_mode(args: argparse.Namespace) -> None:
+    run_dir = args.run_dir.resolve()
+    paths = _run_paths(run_dir)
+    _ensure_run_dirs(paths)
+    _run_job(args.worker_category, args.worker_model, args, paths)
+
+
+def _prepare_inputs(args: argparse.Namespace, paths: dict[str, Path]) -> None:
+    worker_name = args.worker_name or socket.gethostname()
+    state_dir = _job_state_dir(paths)
+
+    def _prepare_dataset_cache() -> None:
+        summary_df = _dataset_summary(args.interim_dir, args.categories, args.top_k_candidates)
+        summary_path = paths["results_dir"] / "dataset_summary.csv"
+        summary_df.to_csv(summary_path, index=False)
+        _prepare_recbole_cache(args, paths)
+        run_manifest = {
+            "run_dir": str(paths["run_dir"]),
+            "categories": args.categories,
+            "models": args.models,
+            "top_k_candidates": args.top_k_candidates,
+            "top_k_rerank": args.top_k_rerank,
+            "user_batch_size": args.user_batch_size,
+            "max_users": args.max_users,
+            "epochs": args.epochs,
+            "train_batch_size": args.train_batch_size,
+            "eval_batch_size": args.eval_batch_size,
+            "learning_rate": args.learning_rate,
+            "eval_step": args.eval_step,
+            "prepare_carbon": args.prepare_carbon,
+            "force": args.force,
+        }
+        manifest_path = paths["results_dir"] / "run_manifest.json"
+        with manifest_path.open("w", encoding="utf-8") as handle:
+            json.dump(run_manifest, handle, indent=2)
+
+    _run_once(
+        lock_path=state_dir / "prepare.lock",
+        done_path=state_dir / "prepare.done.json",
+        description="prepare-inputs",
+        worker_name=worker_name,
+        fn=_prepare_dataset_cache,
+    )
+
+    if args.prepare_carbon:
+        _run_once(
+            lock_path=state_dir / "carbon.lock",
+            done_path=state_dir / "carbon.done.json",
+            description="prepare-carbon",
+            worker_name=worker_name,
+            fn=lambda: _prepare_carbon_predictions(args, paths),
+        )
+
+
+def _generate_plots(args: argparse.Namespace, paths: dict[str, Path]) -> None:
+    plot_cmd = [
+        sys.executable,
+        str(PROJECT_ROOT / "scripts" / "04_generate_paper_plots.py"),
+        "--results-dir",
+        str(paths["results_dir"]),
+        "--figure-dir",
+        str(paths["figures_dir"]),
+        "--summary-output-dir",
+        str(paths["results_dir"]),
+        "--carbon-metrics-path",
+        str(paths["results_dir"] / "carbon" / "pcf_evaluation_metrics.csv"),
+        "--carbon-eval-predictions-path",
+        str(paths["results_dir"] / "carbon" / "pcf_evaluation_predictions.csv"),
+        "--amazon-predictions-path",
+        str(paths["carbon_cache_dir"] / "amazon_pcf_predictions.csv"),
+        "--categories",
+        *args.categories,
+        "--models",
+        *args.models,
+    ]
+    subprocess.run(plot_cmd, cwd=PROJECT_ROOT, check=True)
+
+
+def _generate_plots_once(args: argparse.Namespace, paths: dict[str, Path]) -> None:
+    worker_name = args.worker_name or socket.gethostname()
+    state_dir = _job_state_dir(paths)
+    _run_once(
+        lock_path=state_dir / "plots.lock",
+        done_path=state_dir / "plots.done.json",
+        description="generate-plots",
+        worker_name=worker_name,
+        fn=lambda: _generate_plots(args, paths),
+    )
+
+
+def _claim_mode(args: argparse.Namespace, paths: dict[str, Path]) -> None:
+    worker_name = args.worker_name or socket.gethostname()
+    jobs = list(itertools.product(args.categories, args.models))
+
+    if not args.skip_cache_prepare:
+        _prepare_inputs(args, paths)
+
+    claimed_count = 0
+    while True:
+        job = _claim_next_job(paths, jobs, worker_name=worker_name)
+        if job is None:
+            break
+
+        category, model = job
+        claimed_count += 1
+        try:
+            _run_job(category, model, args, paths)
+        except Exception as exc:
+            _mark_job_failed(paths, category, model, worker_name, repr(exc))
+            raise
+        else:
+            _mark_job_done(paths, category, model, worker_name)
+
+    if claimed_count == 0:
+        log.info("[%s] No claimable jobs were available", worker_name)
+    else:
+        log.info("[%s] Completed %d claimed job(s)", worker_name, claimed_count)
+
+    if args.finalize_when_done and not args.skip_plotting and _all_jobs_done(paths, jobs):
+        _generate_plots_once(args, paths)
 
 
 def _launch_workers(args: argparse.Namespace, paths: dict[str, Path], max_parallel_jobs: int) -> None:
@@ -345,6 +616,12 @@ def main() -> None:
     parser.add_argument("--worker-category", type=str, help=argparse.SUPPRESS)
     parser.add_argument("--worker-model", type=str, help=argparse.SUPPRESS)
     parser.add_argument(
+        "--worker-name",
+        type=str,
+        default=None,
+        help="Optional label for shared Colab worker sessions",
+    )
+    parser.add_argument(
         "--run-dir",
         type=Path,
         default=PROJECT_ROOT / "run",
@@ -379,6 +656,36 @@ def main() -> None:
         help="Maximum concurrent model/category workers; defaults to available hardware",
     )
     parser.add_argument("--prepare-carbon", action="store_true")
+    parser.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Build shared caches/manifests (and optional carbon outputs) then exit",
+    )
+    parser.add_argument(
+        "--plots-only",
+        action="store_true",
+        help="Generate paper plots from completed results and exit",
+    )
+    parser.add_argument(
+        "--claim-jobs",
+        action="store_true",
+        help="Claim pending category/model jobs from a shared run directory",
+    )
+    parser.add_argument(
+        "--skip-cache-prepare",
+        action="store_true",
+        help="Assume shared caches/manifests are already prepared",
+    )
+    parser.add_argument(
+        "--skip-plotting",
+        action="store_true",
+        help="Skip final paper-plot generation",
+    )
+    parser.add_argument(
+        "--finalize-when-done",
+        action="store_true",
+        help="In claim mode, generate plots if all jobs are complete",
+    )
     parser.add_argument("--force", action="store_true", help="Ignore cached train/rerank/eval outputs")
     parser.add_argument("--force-carbon", action="store_true", help="Ignore cached carbon outputs")
     parser.add_argument("--skip-llm", action="store_true")
@@ -395,59 +702,27 @@ def main() -> None:
     paths = _run_paths(args.run_dir.resolve())
     _ensure_run_dirs(paths)
 
-    summary_df = _dataset_summary(args.interim_dir, args.categories, args.top_k_candidates)
-    summary_path = paths["results_dir"] / "dataset_summary.csv"
-    summary_df.to_csv(summary_path, index=False)
-    _prepare_recbole_cache(args, paths)
+    if args.plots_only:
+        _generate_plots_once(args, paths)
+        return
 
-    run_manifest = {
-        "run_dir": str(paths["run_dir"]),
-        "categories": args.categories,
-        "models": args.models,
-        "top_k_candidates": args.top_k_candidates,
-        "top_k_rerank": args.top_k_rerank,
-        "user_batch_size": args.user_batch_size,
-        "max_users": args.max_users,
-        "epochs": args.epochs,
-        "train_batch_size": args.train_batch_size,
-        "eval_batch_size": args.eval_batch_size,
-        "learning_rate": args.learning_rate,
-        "eval_step": args.eval_step,
-        "prepare_carbon": args.prepare_carbon,
-        "force": args.force,
-    }
-    manifest_path = paths["results_dir"] / "run_manifest.json"
-    with manifest_path.open("w", encoding="utf-8") as handle:
-        json.dump(run_manifest, handle, indent=2)
+    if not args.skip_cache_prepare or args.prepare_only:
+        _prepare_inputs(args, paths)
 
-    if args.prepare_carbon:
-        _prepare_carbon_predictions(args, paths)
+    if args.prepare_only:
+        log.info("Preparation complete → %s", paths["run_dir"])
+        return
+
+    if args.claim_jobs:
+        _claim_mode(args, paths)
+        return
 
     max_parallel_jobs = _default_parallelism(args.max_parallel_jobs)
     log.info("Using max_parallel_jobs=%d", max_parallel_jobs)
     _launch_workers(args, paths, max_parallel_jobs=max_parallel_jobs)
 
-    plot_cmd = [
-        sys.executable,
-        str(PROJECT_ROOT / "scripts" / "04_generate_paper_plots.py"),
-        "--results-dir",
-        str(paths["results_dir"]),
-        "--figure-dir",
-        str(paths["figures_dir"]),
-        "--summary-output-dir",
-        str(paths["results_dir"]),
-        "--carbon-metrics-path",
-        str(paths["results_dir"] / "carbon" / "pcf_evaluation_metrics.csv"),
-        "--carbon-eval-predictions-path",
-        str(paths["results_dir"] / "carbon" / "pcf_evaluation_predictions.csv"),
-        "--amazon-predictions-path",
-        str(paths["carbon_cache_dir"] / "amazon_pcf_predictions.csv"),
-        "--categories",
-        *args.categories,
-        "--models",
-        *args.models,
-    ]
-    subprocess.run(plot_cmd, cwd=PROJECT_ROOT, check=True)
+    if not args.skip_plotting:
+        _generate_plots_once(args, paths)
     log.info("Full experiment run complete → %s", paths["run_dir"])
 
 

@@ -18,6 +18,18 @@ python3 -m venv .venv
 
 ## Current Pipeline
 
+## Colab GPU Workflow
+
+For shared Google Drive runs across multiple Colab GPU sessions, use [run/colab_full_experiment.ipynb](run/colab_full_experiment.ipynb).
+
+Recommended pattern:
+
+1. Run one `prepare` session to build shared caches in `run/`.
+2. Run several `worker` sessions in parallel, each with a unique worker name.
+3. Run one `finalize` session to generate the paper plots after all jobs complete.
+
+The worker mode uses atomic job claiming in `scripts/05_run_full_experiment.py`, so multiple Colab notebooks can share the same `run/` directory without duplicating `(category, model)` jobs.
+
 ### 1. Predict product carbon footprints
 
 Run the retrieval-only PCF pipeline:
