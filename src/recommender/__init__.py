@@ -33,7 +33,7 @@ except Exception:  # pragma: no cover - defensive
     pass
 
 
-SUPPORTED_MODELS = ("BPR", "NeuMF", "LightGCN")
+SUPPORTED_MODELS = ("BPR", "NeuMF", "NeuMF_pretrained", "LightGCN")
 
 
 def canonical_model_name(model_name: str) -> str:
