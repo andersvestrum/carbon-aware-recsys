@@ -15,3 +15,21 @@ Public API:
     from src.recommender.recbole_formatter import format_category_for_recbole
     from src.recommender.bpr_fallback import train_bpr_numpy
 """
+
+# ─── scipy >=1.11 compat shim for RecBole's LightGCN ────────────────────────
+# RecBole 1.1.1 calls ``scipy.sparse.dok_matrix._update`` which was removed
+# when ``dok_matrix`` stopped inheriting from ``dict`` in scipy 1.11. We
+# reinstate a minimal implementation so LightGCN's graph builder runs on
+# modern scipy. Must execute before any RecBole import.
+try:
+    from scipy.sparse import dok_matrix as _dok_matrix  # noqa: E402
+
+    if not hasattr(_dok_matrix, "_update"):
+        def _dok_update(self, data):  # pragma: no cover - compat shim
+            # scipy <1.11 behaviour: bulk-insert a dict of {(i,j): value}.
+            for key, value in data.items():
+                self[key] = value
+
+        _dok_matrix._update = _dok_update
+except Exception:  # pragma: no cover - defensive
+    pass
