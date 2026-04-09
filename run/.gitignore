@@ -1,0 +1,12 @@
+cache/**
+results/**
+figures/**
+logs/**
+!cache/
+!results/
+!figures/
+!logs/
+!cache/.gitkeep
+!results/.gitkeep
+!figures/.gitkeep
+!logs/.gitkeep

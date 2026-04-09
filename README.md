@@ -1,44 +1,32 @@
 # Carbon-Aware Recommender System
 
-This repository estimates Product Carbon Footprint (PCF) for Amazon products, then uses those estimates in a carbon-aware recommendation pipeline. The new PCF module is retrieval-first: it maps Amazon items to similar Carbon Catalogue products, then optionally uses those retrieved examples as few-shot context for an LLM.
+This repository implements the methodology described in [docs/main.tex](docs/main.tex):
 
-## PCF Estimation Approach
+1. Estimate Product Carbon Footprint (PCF) for Amazon products with a retrieval-first pipeline over the Carbon Catalogue, with optional zero-shot and few-shot LLM baselines.
+2. Train three RecBole candidate generators: `BPR`, `NeuMF`, and `LightGCN`.
+3. Re-rank each user's candidate set with `score = (1 - lambda) * engagement_norm - lambda * carbon_norm`.
+4. Sweep the 16-value `lambda` grid from the paper and evaluate the engagement-carbon Pareto trade-off across `electronics`, `home_and_kitchen`, and `sports_and_outdoors`.
 
-1. Load labeled products from the Carbon Catalogue and unlabeled Amazon product metadata.
-2. Build sentence embeddings for product text with `sentence-transformers/all-MiniLM-L6-v2`.
-3. Retrieve the top-5 Carbon Catalogue neighbors for each query product with cosine similarity.
-4. Estimate PCF with three methods:
-   - `neighbor_average`: mean PCF of the top-5 retrieved neighbors
-   - `zero_shot_llm`: LLM prediction from the product title alone
-   - `few_shot_llm`: LLM prediction conditioned on the retrieved neighbors and their PCFs
-5. Evaluate on held-out Carbon Catalogue rows with RMSE, MAE, and Spearman correlation.
-6. Write predicted PCFs for Amazon products for downstream re-ranking.
+The maintained recommendation pipeline is intentionally limited to the models used in the paper. Exploratory alternative recommenders are not part of the current workflow.
 
-## Key Files
-
-- Runner: [scripts/predict_carbon.py](/Users/noahsyrdal/carbon-aware-recsys/scripts/predict_carbon.py)
-- Retrieval module: [src/carbon/retrieval.py](/Users/noahsyrdal/carbon-aware-recsys/src/carbon/retrieval.py)
-- Amazon predictions: [data/processed/carbon/amazon_pcf_predictions.csv](/Users/noahsyrdal/carbon-aware-recsys/data/processed/carbon/amazon_pcf_predictions.csv)
-- Evaluation predictions: [output/results/carbon/pcf_evaluation_predictions.csv](/Users/noahsyrdal/carbon-aware-recsys/output/results/carbon/pcf_evaluation_predictions.csv)
-- Evaluation metrics: [output/results/carbon/pcf_evaluation_metrics.csv](/Users/noahsyrdal/carbon-aware-recsys/output/results/carbon/pcf_evaluation_metrics.csv)
-- LLM cache: [data/processed/carbon/llm_prediction_cache.jsonl](/Users/noahsyrdal/carbon-aware-recsys/data/processed/carbon/llm_prediction_cache.jsonl)
-
-## Run
-
-Create a virtual environment and install dependencies:
+## Setup
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 ```
 
-Run the full retrieval pipeline without LLM calls:
+## Current Pipeline
+
+### 1. Predict product carbon footprints
+
+Run the retrieval-only PCF pipeline:
 
 ```bash
 ./.venv/bin/python scripts/predict_carbon.py --device cpu --num-threads 8 --skip-llm
 ```
 
-Run the LLM evaluation slice:
+Run the 100-example LLM evaluation slice used in the paper draft:
 
 ```bash
 OPENAI_API_KEY=... ./.venv/bin/python scripts/predict_carbon.py \
@@ -48,28 +36,63 @@ OPENAI_API_KEY=... ./.venv/bin/python scripts/predict_carbon.py \
   --amazon-limit 0
 ```
 
-For reproducible retrieval runs, keep the default seed, stay on CPU, and use `--llm-cache-only` when replaying saved LLM outputs. Live API generations are not fully reproducible provider-side.
+Outputs:
 
-## Latest Result
+- `data/processed/carbon/amazon_pcf_predictions.csv`
+- `output/results/carbon/pcf_evaluation_predictions.csv`
+- `output/results/carbon/pcf_evaluation_metrics.csv`
+- `output/results/carbon/pcf_run_metadata.json`
 
-**How to regenerate (Table 1):** From the repo root, with `OPENAI_API_KEY` set for LLM baselines:
+### 2. Train candidate generators
+
+Train one of the paper baselines:
 
 ```bash
-uv run python scripts/predict_carbon.py --evaluation-limit 100 --amazon-limit 0
+./.venv/bin/python scripts/01_train_recommender.py --category electronics --model BPR
+./.venv/bin/python scripts/01_train_recommender.py --category electronics --model NeuMF
+./.venv/bin/python scripts/01_train_recommender.py --category electronics --model LightGCN
 ```
 
-Outputs: `output/results/carbon/pcf_evaluation_metrics.csv` and `pcf_evaluation_predictions.csv`. Use `--amazon-limit 0` to run only the 100-item evaluation and skip full Amazon scoring.
+Outputs:
 
-Current checked LLM comparison on a 100-example Carbon Catalogue evaluation slice with `gpt-4.1-mini`:
+- `output/results/<category>_<model>_scores.parquet`
+- `output/results/<category>_<model>_eval.json`
 
-| method | n | RMSE | MAE | Spearman |
-| --- | ---: | ---: | ---: | ---: |
-| neighbor_average | 100 | 3,964 | 1,326 | 0.771 |
-| zero_shot_llm | 100 | 8,878 | 3,334 | 0.421 |
-| few_shot_llm | 100 | 8,328 | 1,696 | 0.853 |
+### 3. Run carbon-aware re-ranking
 
-Interpretation:
+```bash
+./.venv/bin/python scripts/02_rerank.py --category electronics --model BPR
+```
 
-- `few_shot_llm` achieves the best rank correlation but higher MAE than the neighbor baseline, confirming that retrieved in-context examples primarily help on ranking quality rather than absolute error.
-- `zero_shot_llm` remains the weakest baseline (lowest Spearman, highest MAE) even after adding scale/format instructions and clamping, but now operates in a plausible numeric range instead of producing catastrophic outliers.
-- The result is directional, not final: the LLM comparison uses 100 evaluation examples to control API cost. For a stronger research claim, rerun on the full Carbon Catalogue or across repeated fixed-seed samples.
+The default sweep is defined in [configs/reranking/default.yaml](configs/reranking/default.yaml) and matches the paper: 16 `lambda` values, top-10 re-ranked lists, and a top-100 candidate pool from RecBole.
+
+Outputs:
+
+- `output/results/<category>_<model>_reranked_<lambda>.parquet`
+- `output/results/<category>_<model>_reranking_metrics.json`
+
+### 4. Evaluate Pareto trade-offs
+
+```bash
+./.venv/bin/python scripts/03_evaluate.py --category electronics --model BPR
+```
+
+Outputs:
+
+- `output/results/<category>_<model>_evaluation_summary.csv`
+- `output/results/<category>_<model>_pareto.json`
+- `output/figures/<category>_<model>_tradeoff.png`
+- `output/figures/<category>_<model>_lambda_sensitivity.png`
+- `output/figures/all_categories_<model>_tradeoff.png`
+
+## Key Files
+
+- [docs/main.tex](docs/main.tex)
+- [scripts/predict_carbon.py](scripts/predict_carbon.py)
+- [scripts/01_train_recommender.py](scripts/01_train_recommender.py)
+- [scripts/02_rerank.py](scripts/02_rerank.py)
+- [scripts/03_evaluate.py](scripts/03_evaluate.py)
+- [src/carbon/retrieval.py](src/carbon/retrieval.py)
+- [src/recommender/trainer.py](src/recommender/trainer.py)
+- [src/reranking/carbon_reranker.py](src/reranking/carbon_reranker.py)
+- [src/evaluation/metrics.py](src/evaluation/metrics.py)
