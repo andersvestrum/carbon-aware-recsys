@@ -14,18 +14,20 @@ train_batch_size: 2048
 learning_rate: 0.001
 neg_sampling:
   uniform: 1
+eval_step: 5
 
 # ── Evaluation ────────────────────────────────────────────────────────
 eval_args:
   split:
-    LS: valid_and_test
+    TS: [0.8, 0.1, 0.1]
   group_by: user
-  order: RO
+  order: TO
   mode: full
 
 metrics: [NDCG, Recall, MRR]
 topk: [10]
 valid_metric: NDCG@10
+eval_batch_size: 4096
 
 # ── Early stopping ───────────────────────────────────────────────────
 stopping_step: 10
