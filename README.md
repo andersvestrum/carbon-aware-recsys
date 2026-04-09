@@ -20,13 +20,13 @@ python3 -m venv .venv
 
 ## Colab GPU Workflow
 
-For shared Google Drive runs across multiple Colab GPU sessions, use [run/colab_full_experiment.ipynb](run/colab_full_experiment.ipynb).
+For shared Google Drive runs across multiple Colab GPU sessions, use [run/colab_full_experiment.ipynb](run/colab_full_experiment.ipynb) for Session 1 and [run/colab_worker_session.ipynb](run/colab_worker_session.ipynb) for exactly one extra worker session.
 
 Recommended pattern:
 
-1. Open the notebook and leave `MODE = "auto"` for a single-session run.
-2. Open additional Colab sessions with `MODE = "worker"` if you want parallel job claiming.
-3. Use the final status cell to inspect shared run state in `run/`.
+1. Open `run/colab_full_experiment.ipynb` and leave `MODE = "auto"` for the primary session.
+2. If you want one more GPU worker, open `run/colab_worker_session.ipynb` in a fresh Colab session and run all cells there.
+3. Use the final status cell in either notebook to inspect shared run state in `run/`.
 
 The notebook is intentionally thin. Most Colab-specific logic now lives in `scripts/06_colab_session.py`, which handles repo sync, dependency verification, GPU batch-size defaults, shared-run failure context, and dispatch into `scripts/05_run_full_experiment.py`.
 
