@@ -4,7 +4,7 @@ This folder is the Colab-friendly experiment workspace for the current `docs/mai
 
 It holds:
 
-- `colab_full_experiment.ipynb`: shared Colab notebook for `prepare`, `worker`, and `finalize` modes
+- `colab_full_experiment.ipynb`: shared Colab notebook with a default `auto` mode that mounts Drive, clones or updates the repo, prepares caches, claims jobs, and finalizes plots
 - `cache/`: cached RecBole benchmark data, checkpoints, and optional carbon outputs
 - `results/`: score files, reranking metrics, manifests, and summary CSVs
 - `figures/`: paper-ready plots referenced from the Results section
@@ -25,14 +25,14 @@ For a single-machine run, that command will:
 5. evaluate the Pareto trade-offs, and
 6. generate the paper plots into `run/figures/`.
 
-For parallel Colab GPU runs, use the notebook like this:
+For parallel Colab GPU runs, the notebook is now designed so each session can usually just press "Run all":
 
-1. Open one Colab session with `MODE = 'prepare'` and run it once.
-2. Open multiple Colab GPU sessions with `MODE = 'worker'`, giving each a different `WORKER_NAME`.
-3. Point every session at the same repo directory on Google Drive.
-4. Let each worker claim jobs from the shared `run/results/_job_state/` directory.
-5. Run one final session with `MODE = 'finalize'` after all jobs are done.
+1. Open the notebook in one or more Colab GPU sessions.
+2. Leave `MODE = 'auto'` unless you specifically want `prepare`, `worker`, or `finalize` only.
+3. Let the notebook clone or update `carbon-aware-recsys` in `MyDrive/` automatically.
+4. Run all cells in each worker session.
+5. Let each worker claim jobs from the shared `run/results/_job_state/` directory.
 
-The worker mode is safe to run in parallel because `scripts/05_run_full_experiment.py` now atomically claims pending `(category, model)` jobs and skips duplicates.
+The parallel flow is safe because `scripts/05_run_full_experiment.py` atomically prepares shared inputs, claims pending `(category, model)` jobs, and finalizes plots once when the last worker finishes.
 
 For a quick smoke run, pass `--max-users 5000 --categories electronics --models BPR`.
