@@ -64,7 +64,7 @@ PREDICTION_METHOD_TO_COLUMN = {
     "few_shot_llm": "few_shot_llm_pcf",
 }
 LLM_METHODS = ("zero_shot_llm", "few_shot_llm")
-NEIGHBOR_OUTPUT_SUFFIXES = ("id", "title", "pcf", "similarity")
+NEIGHBOR_OUTPUT_SUFFIXES = ("id", "title", "category", "pcf", "similarity")
 AMAZON_OUTPUT_BASE_COLS = (
     AMAZON_ID_COL,
     AMAZON_TITLE_COL,
@@ -236,8 +236,13 @@ class OpenAILLMClient:
     """Thin OpenAI client that returns a single numeric prediction."""
 
     system_prompt = (
-        "You estimate product carbon footprints in kilograms of CO2 equivalent. "
-        "Return only one non-negative numeric value and no extra text."
+        "You are an expert in product life-cycle assessment (LCA) and carbon "
+        "footprint estimation. Given a product description, estimate its "
+        "Product Carbon Footprint (PCF) in kilograms of CO2 equivalent "
+        "(kg CO2e), covering the full product life cycle (manufacturing, "
+        "transport, use, and end-of-life).\n"
+        "Always reason step by step before stating your final answer.\n"
+        "Output your final answer strictly as: PCF: X.X kg CO2e"
     )
 
     def __init__(
@@ -307,12 +312,29 @@ class OpenAILLMClient:
         return parse_numeric_response(text)
 
 
+_PCF_LINE_RE = re.compile(
+    r"PCF\s*[:=]?\s*\**\s*([0-9]*\.?[0-9]+)",
+    re.IGNORECASE,
+)
+
+
 def parse_numeric_response(text: str) -> float:
-    """Extract the first non-negative float from an LLM response and clamp to plausible PCF range."""
-    match = _FLOAT_RE.search(text)
-    if match is None:
-        raise ValueError(f"Could not parse a numeric PCF from response: {text!r}")
-    value = max(float(match.group(0)), 0.0)
+    """Extract the PCF value from an LLM response and clamp to plausible range.
+
+    Prefers an explicit ``PCF: X.X`` line (the structured output format used
+    by the chain-of-thought prompt). Falls back to the *last* float in the
+    response — chosen over the first because CoT reasoning typically mentions
+    other numbers (weights, volumes, percentages) before the final answer.
+    """
+    pcf_matches = _PCF_LINE_RE.findall(text)
+    if pcf_matches:
+        value = float(pcf_matches[-1])
+    else:
+        floats = _FLOAT_RE.findall(text)
+        if not floats:
+            raise ValueError(f"Could not parse a numeric PCF from response: {text!r}")
+        value = float(floats[-1])
+    value = max(value, 0.0)
     return float(np.clip(value, PCF_KG_MIN, PCF_KG_MAX))
 
 
@@ -502,13 +524,19 @@ def prepare_amazon_metadata(
 
 
 def build_zero_shot_prompt(product_title: str) -> str:
-    """Prompt for the zero-shot LLM baseline."""
+    """Prompt for the zero-shot LLM baseline.
+
+    Uses the same chain-of-thought + structured output convention as the
+    few-shot prompt so the two baselines share a parser and output format.
+    """
     return (
-        "Estimate the Product Carbon Footprint (kg CO2e) for the following product. "
-        "Typical values are between 1 and 10,000 kg CO2e for most consumer products.\n\n"
-        f"Product: {product_title}\n\n"
-        "Format: reply with exactly one number (e.g. 150 or 2.5), no scientific notation, "
-        "no units or other text. The number is the PCF in kg CO2e."
+        "## Query product\n"
+        f"Product: {product_title}\n"
+        "PCF: ?\n\n"
+        "## Response format\n"
+        "Step-by-step reasoning: [explain material, weight, "
+        "manufacturing complexity, and category reasoning]\n"
+        "PCF: X.X kg CO2e"
     )
 
 
@@ -516,24 +544,49 @@ def build_few_shot_prompt(
     product_title: str,
     neighbors: Sequence[dict[str, Any]],
 ) -> str:
-    """Prompt for retrieval-augmented few-shot estimation."""
-    lines = ["Example products with known carbon footprint:"]
-    for neighbor in neighbors:
-        lines.extend(
-            [
-                "",
-                f"Product: {neighbor['product_title']}",
-                f"PCF: {neighbor['pcf']}",
-            ]
-        )
+    """Retrieval-augmented few-shot prompt with chain-of-thought reasoning.
+
+    Mirrors the structure documented in the paper's prompt-template figure:
+    instructions → similarity-ranked reference examples → query product →
+    response format. Each reference example includes its cosine similarity
+    so the model can weight anchors accordingly.
+    """
+    lines = [
+        "## Instructions",
+        f"{len(neighbors)} reference products are provided below, ranked "
+        "by cosine similarity of their sentence embeddings to the query "
+        "product. Use them as calibration anchors. When reasoning, "
+        "consider: material composition, product weight, manufacturing "
+        "complexity, and product category.",
+        "",
+        "## Reference examples (ranked by embedding similarity)",
+    ]
+
+    for rank, neighbor in enumerate(neighbors, start=1):
+        sim = neighbor.get("similarity")
+        sim_str = f" (sim: {float(sim):.2f})" if sim is not None and not _is_missing(sim) else ""
+        example_lines = [
+            "",
+            f"-- Example {rank}{sim_str} --",
+            f"Product: {neighbor['product_title']}",
+        ]
+        category = neighbor.get("category")
+        if category and not _is_missing(category):
+            example_lines.append(f"Category: {category}")
+        example_lines.append(f"PCF: {neighbor['pcf']} kg CO2e")
+        lines.extend(example_lines)
 
     lines.extend(
         [
             "",
-            "Now estimate the Product Carbon Footprint (kg CO2e) for:",
+            "## Query product",
             f"Product: {product_title}",
+            "PCF: ?",
             "",
-            "Return only a numeric value.",
+            "## Response format",
+            "Step-by-step reasoning: [explain material, weight, "
+            "manufacturing complexity, and category reasoning]",
+            "PCF: X.X kg CO2e",
         ]
     )
     return "\n".join(lines)
@@ -544,6 +597,8 @@ def _neighbor_examples_from_row(row: pd.Series, top_k: int) -> list[dict[str, An
         {
             "product_title": row[f"neighbor_{rank}_title"],
             "pcf": row[f"neighbor_{rank}_pcf"],
+            "similarity": row.get(f"neighbor_{rank}_similarity"),
+            "category": row.get(f"neighbor_{rank}_category"),
         }
         for rank in range(1, top_k + 1)
         if row.get(f"neighbor_{rank}_title", "")
@@ -664,6 +719,11 @@ def _build_neighbor_columns(
     ref_ids = reference_df[reference_id_col].astype(str).to_numpy()
     ref_titles = reference_df[reference_title_col].astype(str).to_numpy()
     ref_pcfs = reference_df["pcf"].astype(float).to_numpy()
+    # Category comes from the carbon catalogue's sector column when present.
+    if CARBON_SECTOR_COL in reference_df.columns:
+        ref_categories = reference_df[CARBON_SECTOR_COL].fillna("").astype(str).to_numpy()
+    else:
+        ref_categories = np.full(len(reference_df), "", dtype=object)
     pcf_matrix = np.full((n_rows, k), np.nan, dtype=float)
 
     for rank in range(k):
@@ -672,18 +732,21 @@ def _build_neighbor_columns(
 
         id_values = np.full(n_rows, "", dtype=object)
         title_values = np.full(n_rows, "", dtype=object)
+        category_values = np.full(n_rows, "", dtype=object)
         pcf_values = np.full(n_rows, np.nan, dtype=float)
         similarity_values = np.full(n_rows, np.nan, dtype=float)
 
         if np.any(valid):
             id_values[valid] = ref_ids[idx[valid]]
             title_values[valid] = ref_titles[idx[valid]]
+            category_values[valid] = ref_categories[idx[valid]]
             pcf_values[valid] = ref_pcfs[idx[valid]]
             similarity_values[valid] = neighbor_scores[valid, rank]
             pcf_matrix[valid, rank] = pcf_values[valid]
 
         result[f"neighbor_{rank + 1}_id"] = id_values
         result[f"neighbor_{rank + 1}_title"] = title_values
+        result[f"neighbor_{rank + 1}_category"] = category_values
         result[f"neighbor_{rank + 1}_pcf"] = pcf_values
         result[f"neighbor_{rank + 1}_similarity"] = similarity_values
 
