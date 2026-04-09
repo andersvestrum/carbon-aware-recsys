@@ -12,6 +12,7 @@ and type, e.g.:  user_id:token   item_id:token   rating:float   timestamp:float
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -24,11 +25,34 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RECBOLE_DIR = PROJECT_ROOT / "data" / "processed" / "recbole"
 INTERIM_DIR = PROJECT_ROOT / "data" / "interim"
+BENCHMARK_SPLIT_SUFFIXES = {
+    "train": "train",
+    "val": "valid",
+    "test": "test",
+}
+
+
+def load_interim_split(
+    category: str,
+    split: str,
+    interim_dir: Path | None = None,
+) -> pd.DataFrame:
+    """Load one interim split for a category."""
+    if interim_dir is None:
+        interim_dir = INTERIM_DIR
+
+    path = Path(interim_dir) / split / f"{category}.csv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Missing interim file for category='{category}', split='{split}': {path}"
+        )
+    return pd.read_csv(path)
 
 
 def _concat_interim_splits(
     category: str,
     splits: list[str] | None = None,
+    interim_dir: Path | None = None,
 ) -> pd.DataFrame:
     """Load and concatenate interim interaction CSVs for a category.
 
@@ -41,10 +65,12 @@ def _concat_interim_splits(
     """
     if splits is None:
         splits = ["train", "val", "test"]
+    if interim_dir is None:
+        interim_dir = INTERIM_DIR
 
     frames = []
     for split in splits:
-        path = INTERIM_DIR / split / f"{category}.csv"
+        path = Path(interim_dir) / split / f"{category}.csv"
         if not path.exists():
             log.warning("Missing interim file: %s — skipping", path)
             continue
@@ -72,6 +98,7 @@ def write_recbole_inter(
     interactions: pd.DataFrame,
     dataset_name: str,
     output_dir: Path | None = None,
+    file_name: str | None = None,
 ) -> Path:
     """Write a RecBole .inter file from an interactions DataFrame.
 
@@ -94,7 +121,7 @@ def write_recbole_inter(
     if output_dir is None:
         output_dir = RECBOLE_DIR / dataset_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    inter_path = output_dir / f"{dataset_name}.inter"
+    inter_path = output_dir / (file_name or f"{dataset_name}.inter")
 
     out = pd.DataFrame()
     out["user_id:token"] = interactions["user_id"].astype(str)
@@ -167,6 +194,10 @@ def format_category_for_recbole(
     category: str,
     dataset_name: str | None = None,
     max_users: int | None = None,
+    interim_dir: Path | None = None,
+    output_root: Path | None = None,
+    benchmark_splits: bool = True,
+    force: bool = False,
 ) -> tuple[Path, str]:
     """Full pipeline: load interim data → write RecBole files.
 
@@ -175,30 +206,116 @@ def format_category_for_recbole(
         dataset_name: RecBole dataset name. Defaults to the category name.
         max_users: If set, sample this many users and keep only their
             interactions. Dramatically speeds up training on large datasets.
+        interim_dir: Root containing ``train/``, ``val/``, and ``test/`` CSVs.
+        output_root: Root directory where RecBole-formatted files are written.
+        benchmark_splits: Whether to also write benchmark split files for
+            RecBole's pre-split loading mode.
+        force: Rewrite cached files even if they already exist.
 
     Returns:
         (output_dir, dataset_name)
     """
     if dataset_name is None:
         dataset_name = category
+    if interim_dir is None:
+        interim_dir = INTERIM_DIR
+    if output_root is None:
+        output_root = RECBOLE_DIR
 
-    interactions = _concat_interim_splits(category)
+    output_dir = Path(output_root) / dataset_name
+    combined_inter_path = output_dir / f"{dataset_name}.inter"
+    item_path = output_dir / f"{dataset_name}.item"
+    stats_path = output_dir / "dataset_stats.json"
+    benchmark_paths = [
+        output_dir / f"{dataset_name}.{suffix}.inter"
+        for suffix in BENCHMARK_SPLIT_SUFFIXES.values()
+    ]
+
+    cached_paths = [combined_inter_path, item_path, stats_path]
+    if benchmark_splits:
+        cached_paths.extend(benchmark_paths)
+    if not force and all(path.exists() for path in cached_paths):
+        log.info("Using cached RecBole dataset at %s", output_dir)
+        return output_dir, dataset_name
+
+    split_frames = {
+        split: load_interim_split(category, split, interim_dir=interim_dir)
+        for split in BENCHMARK_SPLIT_SUFFIXES
+    }
 
     if max_users is not None:
-        all_users = interactions["user_id"].unique()
+        train_users = split_frames["train"]["user_id"].unique()
+        all_users = train_users
         if len(all_users) > max_users:
             rng = np.random.RandomState(42)
             sampled_users = rng.choice(all_users, size=max_users, replace=False)
-            interactions = interactions[interactions["user_id"].isin(sampled_users)].copy()
+            sampled_user_set = set(sampled_users.tolist())
+            split_frames = {
+                split: frame[frame["user_id"].isin(sampled_user_set)].copy()
+                for split, frame in split_frames.items()
+            }
             log.info(
                 "Subsetted to %d users → %s interactions",
-                max_users, f"{len(interactions):,}",
+                max_users,
+                f"{sum(len(frame) for frame in split_frames.values()):,}",
             )
 
-    output_dir = RECBOLE_DIR / dataset_name
+    interactions = pd.concat(split_frames.values(), ignore_index=True)
+    if "timestamp" in interactions.columns:
+        interactions = interactions.sort_values("timestamp").reset_index(drop=True)
 
     write_recbole_inter(interactions, dataset_name, output_dir)
     write_recbole_item(interactions, dataset_name, output_dir)
+
+    if benchmark_splits:
+        for split, suffix in BENCHMARK_SPLIT_SUFFIXES.items():
+            frame = split_frames[split].copy()
+            if "timestamp" in frame.columns:
+                frame = frame.sort_values("timestamp").reset_index(drop=True)
+            write_recbole_inter(
+                frame,
+                dataset_name,
+                output_dir,
+                file_name=f"{dataset_name}.{suffix}.inter",
+            )
+
+    stats = {
+        "category": category,
+        "dataset_name": dataset_name,
+        "benchmark_splits": benchmark_splits,
+        "max_users": max_users,
+        "per_split": {},
+    }
+    for split, frame in split_frames.items():
+        stats["per_split"][split] = {
+            "rows": int(len(frame)),
+            "users": int(frame["user_id"].nunique()),
+            "items": int(frame["parent_asin"].nunique()),
+            "timestamp_min": (
+                int(frame["timestamp"].min()) if "timestamp" in frame.columns and not frame.empty else None
+            ),
+            "timestamp_max": (
+                int(frame["timestamp"].max()) if "timestamp" in frame.columns and not frame.empty else None
+            ),
+        }
+    stats["combined"] = {
+        "rows": int(len(interactions)),
+        "users": int(interactions["user_id"].nunique()),
+        "items": int(interactions["parent_asin"].nunique()),
+        "timestamp_min": (
+            int(interactions["timestamp"].min())
+            if "timestamp" in interactions.columns and not interactions.empty
+            else None
+        ),
+        "timestamp_max": (
+            int(interactions["timestamp"].max())
+            if "timestamp" in interactions.columns and not interactions.empty
+            else None
+        ),
+    }
+    with stats_path.open("w", encoding="utf-8") as handle:
+        json.dump(stats, handle, indent=2)
+    log.info("Wrote dataset stats → %s", stats_path)
 
     return output_dir, dataset_name
 

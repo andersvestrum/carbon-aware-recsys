@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Carbon-Aware Re-ranking (Pipeline Step 3)
+Carbon-Aware Re-ranking (Pipeline Step 2)
 ==========================================
-Re-ranks candidate items using DeepFM engagement predictions:
+Re-ranks candidate items using RecBole relevance scores as the engagement signal:
 
     s(u, i; λ) = (1 − λ) · engagement_norm − λ · carbon_norm
 
@@ -11,12 +11,11 @@ at each operating point.
 
 Pipeline context:
     1. RecBole → top-K candidates with relevance scores
-    2. DeepFM → engagement prediction on candidates
-    3. **This script** → carbon-aware re-ranked lists + metrics per λ
-    4. Evaluation → engagement vs carbon footprint trade-off
+    2. **This script** → carbon-aware re-ranked lists + metrics per λ
+    3. Evaluation → engagement vs carbon footprint trade-off
 
 Inputs:
-    output/results/<category>_<model>_engagement.parquet  (from 02_train_deepfm.py)
+    output/results/<category>_<model>_scores.parquet       (from 01_train_recommender.py)
     data/interim/{train,val,test}/<category>.csv           (has pcf column)
 
 Outputs:
@@ -24,10 +23,10 @@ Outputs:
     output/results/<category>_<model>_reranking_metrics.json — metrics per λ
 
 Usage:
-    python scripts/03_rerank.py                              # all categories
-    python scripts/03_rerank.py --category electronics
-    python scripts/03_rerank.py --model LightGCN
-    python scripts/03_rerank.py --lambda-values 0.0 0.1 0.5  # specific λ values
+    python scripts/02_rerank.py                              # all categories
+    python scripts/02_rerank.py --category electronics
+    python scripts/02_rerank.py --model LightGCN
+    python scripts/02_rerank.py --lambda-values 0.0 0.1 0.5  # specific λ values
 """
 
 from __future__ import annotations
@@ -38,12 +37,11 @@ import logging
 import sys
 from pathlib import Path
 
-import numpy as np
-import yaml
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.recommender import SUPPORTED_MODELS, canonical_model_name
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,8 +52,13 @@ log = logging.getLogger(__name__)
 
 RESULTS_DIR = PROJECT_ROOT / "output" / "results"
 CONFIG_DIR = PROJECT_ROOT / "configs" / "reranking"
+INTERIM_DIR = PROJECT_ROOT / "data" / "interim"
 
 ALL_CATEGORIES = ["electronics", "home_and_kitchen", "sports_and_outdoors"]
+DEFAULT_LAMBDA_VALUES = [
+    0.0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25,
+    0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
+]
 
 
 def load_config(config_path: str | Path | None = None) -> dict:
@@ -65,6 +68,8 @@ def load_config(config_path: str | Path | None = None) -> dict:
 
     config_path = Path(config_path)
     if config_path.exists():
+        import yaml
+
         with open(config_path) as f:
             cfg = yaml.safe_load(f)
         log.info("Loaded reranking config from %s", config_path)
@@ -72,7 +77,7 @@ def load_config(config_path: str | Path | None = None) -> dict:
 
     # Fallback defaults
     return {
-        "lambda_values": np.round(np.linspace(0, 1, 11), 2).tolist(),
+        "lambda_values": DEFAULT_LAMBDA_VALUES,
         "top_k": 10,
     }
 
@@ -82,6 +87,8 @@ def run_reranking(
     model_name: str = "BPR",
     lambda_values: list[float] | None = None,
     top_k: int = 10,
+    results_dir: Path | None = None,
+    interim_dir: Path | None = None,
 ) -> dict:
     """Run carbon-aware re-ranking for one category.
 
@@ -89,41 +96,36 @@ def run_reranking(
         Dict with ``metrics`` (list of dicts per λ) and ``summary``.
     """
     import pandas as pd
-    from src.recommender.recbole_formatter import _concat_interim_splits
+    from src.recommender.recbole_formatter import _concat_interim_splits, load_interim_split
     from src.reranking.carbon_reranker import (
         CarbonReranker,
-        build_test_set,
         compute_reranking_metrics,
     )
 
-    # ── Load engagement scores from step 2 (DeepFM) ─────────────────
-    scores_path = RESULTS_DIR / f"{category}_{model_name}_engagement.parquet"
-    if not scores_path.exists():
-        # Fallback: try raw relevance scores (skip DeepFM)
-        scores_path = RESULTS_DIR / f"{category}_{model_name}_scores.parquet"
-        if not scores_path.exists():
-            scores_path = RESULTS_DIR / f"{category}_{model_name}_fallback_scores.parquet"
+    # ── Load relevance scores from step 1 (RecBole) ──────────────────
+    model_name = canonical_model_name(model_name)
+    results_dir = results_dir or RESULTS_DIR
+    interim_dir = interim_dir or INTERIM_DIR
+    scores_path = results_dir / f"{category}_{model_name}_scores.parquet"
     if not scores_path.exists():
         raise FileNotFoundError(
-            f"Engagement / relevance scores not found. "
-            "Run 02_train_deepfm.py (or 01_train_recommender.py) first."
+            f"Relevance scores not found for {category}/{model_name}. "
+            "Run 01_train_recommender.py first."
         )
 
     scores_df = pd.read_parquet(scores_path)
 
-    # Normalise column name: if we loaded raw relevance, rename for the re-ranker
-    if "engagement_score" not in scores_df.columns and "relevance_score" in scores_df.columns:
+    if "relevance_score" in scores_df.columns:
         scores_df = scores_df.rename(columns={"relevance_score": "engagement_score"})
-        log.warning("Using raw relevance_score as engagement proxy (DeepFM not run yet)")
 
     log.info(
-        "Loaded %s engagement scores from %s",
+        "Loaded %s relevance scores from %s",
         f"{len(scores_df):,}",
         scores_path.name,
     )
 
     # ── Load item carbon footprints from interim data ─────────────────
-    interactions = _concat_interim_splits(category)
+    interactions = _concat_interim_splits(category, interim_dir=interim_dir)
 
     # Build carbon lookup from interim data (has pcf column)
     carbon_df = (
@@ -138,18 +140,24 @@ def run_reranking(
     )
 
     # ── Build test set ────────────────────────────────────────────────
-    test_interactions = build_test_set(interactions)
+    test_interactions = (
+        load_interim_split(category, "test", interim_dir=interim_dir)
+        [["user_id", "parent_asin", "timestamp"]]
+        .sort_values("timestamp")
+        .drop_duplicates(subset="user_id", keep="last")
+        [["user_id", "parent_asin"]]
+    )
     log.info("Test set: %s users", f"{len(test_interactions):,}")
 
     # ── Default λ values ──────────────────────────────────────────────
     if lambda_values is None:
-        lambda_values = np.round(np.linspace(0, 1, 11), 2).tolist()
+        lambda_values = DEFAULT_LAMBDA_VALUES
 
     # ── Sweep λ ───────────────────────────────────────────────────────
     reranker = CarbonReranker(top_k=top_k)
     all_metrics: list[dict] = []
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     for lam in lambda_values:
         ranked = reranker.rerank(scores_df, carbon_df, lam)
@@ -159,7 +167,10 @@ def run_reranking(
         )
         all_metrics.append(metrics)
 
-        # Skip per-λ parquet writes — metrics JSON is sufficient for the sweep
+        # Save re-ranked lists for each λ value
+        lam_str = f"{lam:.3f}"
+        out_path = results_dir / f"{category}_{model_name}_reranked_{lam_str}.parquet"
+        ranked.to_parquet(out_path, index=False)
 
         log.info(
             "  λ=%5.3f  NDCG@%d=%.4f  carbon=%.2f kg  (%s users)",
@@ -192,7 +203,7 @@ def run_reranking(
     }
 
     # Save metrics
-    metrics_path = RESULTS_DIR / f"{category}_{model_name}_reranking_metrics.json"
+    metrics_path = results_dir / f"{category}_{model_name}_reranking_metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(
             {"summary": summary, "per_lambda": all_metrics},
@@ -206,19 +217,21 @@ def run_reranking(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Carbon-aware re-ranking (pipeline step 3)",
+        description="Carbon-aware re-ranking (pipeline step 2)",
     )
     parser.add_argument(
         "--category",
         type=str,
+        choices=ALL_CATEGORIES,
         default=None,
         help="Category to re-rank (default: all three)",
     )
     parser.add_argument(
         "--model",
-        type=str,
+        type=canonical_model_name,
+        choices=SUPPORTED_MODELS,
         default="BPR",
-        help="Model name matching the scores file (default: BPR)",
+        help="Candidate generation model used in the paper (default: BPR)",
     )
     parser.add_argument(
         "--config",
@@ -239,6 +252,18 @@ def main():
         default=None,
         help="Number of items per user after re-ranking (default: from config)",
     )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=RESULTS_DIR,
+        help="Directory containing score files and reranking outputs",
+    )
+    parser.add_argument(
+        "--interim-dir",
+        type=Path,
+        default=INTERIM_DIR,
+        help="Directory containing interim train/val/test CSVs",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -258,6 +283,8 @@ def main():
             model_name=args.model,
             lambda_values=lambda_values,
             top_k=top_k,
+            results_dir=args.results_dir,
+            interim_dir=args.interim_dir,
         )
 
         s = result["summary"]

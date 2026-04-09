@@ -13,18 +13,20 @@ train_batch_size: 2048
 learning_rate: 0.001
 neg_sampling:
   uniform: 1
+eval_step: 5                   # validating every epoch is too slow on full-data CPU runs
 
 # ── Evaluation ────────────────────────────────────────────────────────
 eval_args:
   split:
-    LS: valid_and_test       # leave-one-out split
+    TS: [0.8, 0.1, 0.1]      # benchmark files override this; fallback is time-based
   group_by: user
-  order: RO                  # random order (no timestamp required)
+  order: TO                  # timestamp order
   mode: full                 # rank against all items
 
 metrics: [NDCG, Recall, MRR]
 topk: [10]
 valid_metric: NDCG@10
+eval_batch_size: 4096
 
 # ── Early stopping ───────────────────────────────────────────────────
 stopping_step: 10

@@ -1,38 +1,32 @@
 """
 Carbon-Aware Re-ranker — Pipeline Step 3
 
-Re-ranks candidate items using DeepFM engagement predictions and
+Re-ranks candidate items using RecBole relevance scores and
 carbon footprints:
 
     s(u, i; λ) = (1 − λ) · ẽ(u, i) − λ · c̃(i)
 
 Where:
-    ẽ      = per-user normalised engagement score from DeepFM  (∈ [0, 1])
+    ẽ      = per-user normalised engagement score from RecBole  (∈ [0, 1])
     c̃      = globally normalised carbon footprint              (∈ [0, 1])
     λ      = trade-off parameter  (0 = pure engagement, 1 = pure carbon)
 
 Pipeline context:
     1. RecBole → (user_id, parent_asin, relevance_score)
-    2. DeepFM → (user_id, parent_asin, engagement_score)
-    3. **This module** → re-ranked lists at one or more λ values
-    4. Evaluation → engagement vs carbon footprint trade-off
+    2. **This module** → re-ranked lists at one or more λ values
+    3. Evaluation → engagement vs carbon footprint trade-off
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INTERIM_DIR = PROJECT_ROOT / "data" / "interim"
-RESULTS_DIR = PROJECT_ROOT / "output" / "results"
 
 
 # ─── Normalisation helpers ───────────────────────────────────────────────────
@@ -101,7 +95,7 @@ class CarbonReranker:
         """Re-rank candidates for a single λ value.
 
         Args:
-            scores_df: Engagement predictions from DeepFM.  Must have
+            scores_df: Relevance scores from RecBole.  Must have
                 columns ``[user_id, parent_asin, engagement_score]``.
             carbon_df: Item carbon footprints.  Must have columns
                 ``[parent_asin, pcf]``.
@@ -162,7 +156,7 @@ class CarbonReranker:
         """Re-rank at multiple λ values.
 
         Args:
-            scores_df: Engagement predictions from DeepFM.
+            scores_df: Relevance scores from RecBole.
             carbon_df: Item carbon footprints.
             lambda_values: Sequence of λ values to sweep.
 
@@ -262,4 +256,3 @@ def build_test_set(interactions: pd.DataFrame) -> pd.DataFrame:
             .reset_index()[["user_id", "parent_asin"]]
         )
     return test
-

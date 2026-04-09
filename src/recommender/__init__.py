@@ -1,19 +1,18 @@
 """
 RecBole-based recommender module — Candidate Generation (Pipeline Step 1)
 
-Trains collaborative filtering models (BPR, NeuMF, SASRec, LightGCN)
+Trains collaborative filtering models (BPR, NeuMF, LightGCN)
 and produces top-K relevance scores per user for downstream processing.
 
 Pipeline:
     1. **This module** → top-K candidates with relevance scores
-    2. DeepFM → engagement prediction on candidates
+    2. Carbon-aware re-ranking using RecBole relevance scores
     3. Carbon-aware re-ranking: score = (1−λ)·engagement − λ·carbon
     4. Evaluation → engagement vs carbon footprint trade-off
 
 Public API:
     from src.recommender.trainer import train_and_score
     from src.recommender.recbole_formatter import format_category_for_recbole
-    from src.recommender.bpr_fallback import train_bpr_numpy
 """
 
 # ─── scipy >=1.11 compat shim for RecBole's LightGCN ────────────────────────
@@ -26,10 +25,27 @@ try:
 
     if not hasattr(_dok_matrix, "_update"):
         def _dok_update(self, data):  # pragma: no cover - compat shim
-            # scipy <1.11 behaviour: bulk-insert a dict of {(i,j): value}.
             for key, value in data.items():
                 self[key] = value
 
         _dok_matrix._update = _dok_update
 except Exception:  # pragma: no cover - defensive
     pass
+
+
+SUPPORTED_MODELS = ("BPR", "NeuMF", "LightGCN")
+
+
+def canonical_model_name(model_name: str) -> str:
+    """Return the canonical paper-supported RecBole model name."""
+    aliases = {name.lower(): name for name in SUPPORTED_MODELS}
+    canonical = aliases.get(model_name.lower())
+    if canonical is None:
+        supported = ", ".join(SUPPORTED_MODELS)
+        raise ValueError(
+            f"Unsupported model '{model_name}'. Expected one of: {supported}."
+        )
+    return canonical
+
+
+__all__ = ["SUPPORTED_MODELS", "canonical_model_name"]
