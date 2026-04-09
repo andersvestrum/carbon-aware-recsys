@@ -4,7 +4,8 @@ This folder is the Colab-friendly experiment workspace for the current `docs/mai
 
 It holds:
 
-- `colab_full_experiment.ipynb`: thin Colab wrapper with only mount, config, run, and status cells
+- `colab_full_experiment.ipynb`: thin Session 1 notebook for the primary `MODE="auto"` run
+- `colab_worker_session.ipynb`: thin Session 2+ notebook for one extra `MODE="worker"` GPU session
 - `cache/`: cached RecBole benchmark data, checkpoints, and optional carbon outputs
 - `results/`: score files, reranking metrics, manifests, and summary CSVs
 - `figures/`: paper-ready plots referenced from the Results section
@@ -31,11 +32,11 @@ For a single-machine run, that command will:
 5. evaluate the Pareto trade-offs, and
 6. generate the paper plots into `run/figures/`.
 
-For parallel Colab GPU runs, the notebook is now intentionally minimal:
+For parallel Colab GPU runs, the notebooks are intentionally minimal:
 
-1. Open the notebook in one or more Colab GPU sessions.
-2. Set `MODE = 'auto'` for a one-session run, or `MODE = 'worker'` in extra sessions.
-3. Run all cells.
+1. Open `colab_full_experiment.ipynb` in the first Colab GPU session and leave `MODE = 'auto'`.
+2. Open `colab_worker_session.ipynb` in exactly one additional Colab GPU session when you want a second worker.
+3. Run all cells in each notebook.
 4. Let `scripts/06_colab_session.py` handle repo sync, dependency checks, batch-size defaults, and mode dispatch.
 5. Let each worker claim jobs from the shared `run/results/_job_state/` directory.
 
