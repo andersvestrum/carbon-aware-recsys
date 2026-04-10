@@ -44,6 +44,7 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_DIR = PROJECT_ROOT / "output" / "results"
 FIGURES_DIR = PROJECT_ROOT / "output" / "figures"
+PAPER_CARBON_LABEL = "AvgPCF@10"
 
 
 # ─── Pareto frontier ─────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ def pareto_frontier(
     metrics: list[dict],
     engagement_key: str = "NDCG@10",
     carbon_key: str = "avg_carbon_kg",
+    engagement_tolerance: float = 5e-5,
 ) -> list[dict]:
     """Extract the Pareto-optimal operating points.
 
@@ -77,7 +79,9 @@ def pareto_frontier(
     best_engagement = -float("inf")
 
     for pt in sorted_pts:
-        if pt[engagement_key] > best_engagement:
+        # Treat tiny NDCG differences as ties so nearly-identical operating
+        # points do not all appear as distinct Pareto improvements.
+        if pt[engagement_key] > best_engagement + engagement_tolerance:
             pareto.append(pt)
             best_engagement = pt[engagement_key]
 
@@ -115,6 +119,8 @@ def build_summary_table(
         - ``engagement_retention_pct``: % of λ=0 engagement retained
     """
     df = pd.DataFrame(metrics)
+    if carbon_key in df.columns and PAPER_CARBON_LABEL not in df.columns:
+        df[PAPER_CARBON_LABEL] = df[carbon_key]
 
     # Mark Pareto-optimal points
     front = pareto_frontier(metrics, engagement_key, carbon_key)
@@ -165,6 +171,8 @@ def plot_tradeoff_curve(
         matplotlib Figure.
     """
     df = pd.DataFrame(metrics)
+    if carbon_key in df.columns and PAPER_CARBON_LABEL not in df.columns:
+        df[PAPER_CARBON_LABEL] = df[carbon_key]
     front = pareto_frontier(metrics, engagement_key, carbon_key)
     front_df = pd.DataFrame(front).sort_values(carbon_key)
 
@@ -176,15 +184,6 @@ def plot_tradeoff_curve(
         c="steelblue", s=60, alpha=0.6, zorder=3,
         label="Operating points",
     )
-
-    # Annotate λ values on all operating points
-    for _, row in df.iterrows():
-        ax.annotate(
-            f"λ={row['lambda']:.2f}",
-            (row[carbon_key], row[engagement_key]),
-            textcoords="offset points", xytext=(5, 3),
-            fontsize=7, color="gray", alpha=0.7,
-        )
 
     # Pareto front
     ax.plot(
@@ -211,7 +210,7 @@ def plot_tradeoff_curve(
             zorder=5, label="Baseline (λ=0)",
         )
 
-    ax.set_xlabel("Avg Carbon Footprint (kg CO₂e)", fontsize=12)
+    ax.set_xlabel(f"{PAPER_CARBON_LABEL} (kg CO₂e)", fontsize=12)
     ax.set_ylabel(engagement_key, fontsize=12)
     ax.set_title(
         f"Engagement vs Carbon Trade-off — {category.replace('_', ' ').title()} ({model_name})",
@@ -264,6 +263,8 @@ def plot_multi_category(
 
     for cat, metrics in all_metrics.items():
         df = pd.DataFrame(metrics).sort_values(carbon_key)
+        if carbon_key in df.columns and PAPER_CARBON_LABEL not in df.columns:
+            df[PAPER_CARBON_LABEL] = df[carbon_key]
         front = pareto_frontier(metrics, engagement_key, carbon_key)
         front_df = pd.DataFrame(front).sort_values(carbon_key)
         color = colors.get(cat, "gray")
@@ -279,7 +280,7 @@ def plot_multi_category(
             label=f"{label} (Pareto)",
         )
 
-    ax.set_xlabel("Avg Carbon Footprint (kg CO₂e)", fontsize=12)
+    ax.set_xlabel(f"{PAPER_CARBON_LABEL} (kg CO₂e)", fontsize=12)
     ax.set_ylabel(engagement_key, fontsize=12)
     ax.set_title(
         f"Engagement vs Carbon — All Categories ({model_name})",
@@ -317,6 +318,8 @@ def plot_lambda_sensitivity(
     Shows how both metrics change as λ increases from 0 → 1.
     """
     df = pd.DataFrame(metrics).sort_values("lambda")
+    if carbon_key in df.columns and PAPER_CARBON_LABEL not in df.columns:
+        df[PAPER_CARBON_LABEL] = df[carbon_key]
 
     fig, ax1 = plt.subplots(figsize=(10, 5))
 
@@ -337,7 +340,7 @@ def plot_lambda_sensitivity(
         df["lambda"], df[carbon_key],
         "s--", color=color_carb, linewidth=2, markersize=6,
     )
-    ax2.set_ylabel("Avg Carbon (kg CO₂e)", fontsize=12, color=color_carb)
+    ax2.set_ylabel(f"{PAPER_CARBON_LABEL} (kg CO₂e)", fontsize=12, color=color_carb)
     ax2.tick_params(axis="y", labelcolor=color_carb)
 
     ax1.set_title(

@@ -57,7 +57,8 @@ INTERIM_DIR = PROJECT_ROOT / "data" / "interim"
 ALL_CATEGORIES = ["electronics", "home_and_kitchen", "sports_and_outdoors"]
 DEFAULT_LAMBDA_VALUES = [
     0.0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25,
-    0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
+    0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
+    0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0,
 ]
 
 

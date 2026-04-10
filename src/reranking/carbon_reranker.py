@@ -226,13 +226,12 @@ def compute_reranking_metrics(
         k: Cut-off for top-k metrics.
 
     Returns:
-        Dict with keys: ``lambda``, ``avg_carbon_kg``, ``NDCG@k``,
-        ``Recall@k``, ``MRR``, ``n_users``.
+        Dict with keys: ``lambda``, ``avg_carbon_kg``, ``AvgPCF@k``,
+        ``NDCG@k``, ``Recall@k``, ``MRR``, ``n_users``.
     """
-    avg_carbon = float(ranked_df["pcf"].mean())
-
     # Keep only top-k rows per user (ranked_df is already top-k, but be safe)
     topk = ranked_df[ranked_df["rank"] <= k]
+    avg_pcf_at_k = float(topk["pcf"].mean()) if not topk.empty else 0.0
 
     # Vectorised hit lookup: join on (user_id, parent_asin) against test items
     test_slim = test_interactions[["user_id", "parent_asin"]].drop_duplicates(
@@ -260,7 +259,10 @@ def compute_reranking_metrics(
 
     return {
         "lambda": float(lam),
-        "avg_carbon_kg": avg_carbon,
+        # Keep the legacy key for backwards compatibility with existing
+        # result loaders, but expose the paper-facing metric name too.
+        "avg_carbon_kg": avg_pcf_at_k,
+        f"AvgPCF@{k}": avg_pcf_at_k,
         f"NDCG@{k}": ndcg,
         f"Recall@{k}": recall,
         "MRR": mrr,
