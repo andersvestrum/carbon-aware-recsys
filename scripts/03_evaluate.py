@@ -116,21 +116,22 @@ def main():
         pareto = result["pareto_points"]
         baseline = result["baseline"]
         best = result["best_tradeoff"]
+        baseline_pcf = baseline.get("AvgPCF@10", baseline.get("avg_carbon_kg", 0))
 
         log.info("")
         log.info("  ── Summary ──")
-        log.info("  Baseline (λ=0): NDCG@10=%.4f  carbon=%.2f kg",
-                 baseline.get("NDCG@10", 0), baseline.get("avg_carbon_kg", 0))
+        log.info("  Baseline (λ=0): NDCG@10=%.4f  AvgPCF@10=%.2f kg",
+                 baseline.get("NDCG@10", 0), baseline_pcf)
         log.info("  Pareto-optimal points: %d", len(pareto))
 
         for pt in pareto:
+            pt_pcf = pt.get("AvgPCF@10", pt.get("avg_carbon_kg", 0))
             log.info(
-                "    λ=%.3f  NDCG@10=%.4f  carbon=%.2f kg  (−%.1f%%)",
+                "    λ=%.3f  NDCG@10=%.4f  AvgPCF@10=%.2f kg  (−%.1f%%)",
                 pt["lambda"],
                 pt.get("NDCG@10", 0),
-                pt.get("avg_carbon_kg", 0),
-                100 * (baseline.get("avg_carbon_kg", 1) - pt.get("avg_carbon_kg", 0))
-                / max(baseline.get("avg_carbon_kg", 1), 1e-9),
+                pt_pcf,
+                100 * (baseline_pcf - pt_pcf) / max(baseline_pcf, 1e-9),
             )
 
         if best:
@@ -140,9 +141,9 @@ def main():
                 best["lambda"],
             )
             log.info(
-                "    NDCG@10=%.4f  carbon=%.2f kg",
+                "    NDCG@10=%.4f  AvgPCF@10=%.2f kg",
                 best.get("NDCG@10", 0),
-                best.get("avg_carbon_kg", 0),
+                best.get("AvgPCF@10", best.get("avg_carbon_kg", 0)),
             )
 
         # Load per_lambda for multi-category plot

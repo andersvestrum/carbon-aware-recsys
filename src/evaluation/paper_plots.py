@@ -267,7 +267,16 @@ def plot_pcf_scatter(predictions_df: pd.DataFrame, method: str, figure_dir: Path
 
 
 def plot_pcf_distribution(amazon_df: pd.DataFrame, category: str, figure_dir: Path) -> Path | None:
-    source_col = "source_category" if "source_category" in amazon_df.columns else "main_category"
+    if "source_category" in amazon_df.columns:
+        source_col = "source_category"
+    elif "main_category" in amazon_df.columns:
+        source_col = "main_category"
+    else:
+        log.warning(
+            "Skipping PCF distribution for %s because amazon predictions lack source/main category columns",
+            category,
+        )
+        return None
     subset = amazon_df[amazon_df[source_col] == category].copy()
     if "pcf" not in subset.columns:
         return None
