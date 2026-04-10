@@ -236,17 +236,40 @@ def train(
     )
     log.info("Best validation score (NDCG@10): %.4f", best_valid_score)
 
-    # Evaluate on test set
-    # PyTorch ≥ 2.6 changed torch.load defaults, so fall back gracefully
-    try:
-        test_result = trainer.evaluate(test_data, load_best_model=True)
-    except Exception as exc:
-        log.warning(
-            "Could not reload best checkpoint (%r); "
-            "evaluating in-memory model instead.",
-            exc,
-        )
-        test_result = trainer.evaluate(test_data, load_best_model=False)
+    # Load the best checkpoint explicitly so both evaluation and downstream
+    # score extraction use the same model state under PyTorch ≥ 2.6.
+    best_checkpoint_loaded = False
+    checkpoint_file = getattr(trainer, "saved_model_file", None)
+    if checkpoint_file:
+        try:
+            import torch
+
+            try:
+                checkpoint = torch.load(
+                    checkpoint_file,
+                    map_location=config["device"],
+                    weights_only=False,
+                )
+            except TypeError:
+                checkpoint = torch.load(
+                    checkpoint_file,
+                    map_location=config["device"],
+                )
+            trainer.model.load_state_dict(checkpoint["state_dict"])
+            trainer.model.load_other_parameter(checkpoint.get("other_parameter"))
+            best_checkpoint_loaded = True
+            log.info("Reloaded best checkpoint → %s", checkpoint_file)
+        except Exception as exc:
+            log.warning(
+                "Could not reload best checkpoint (%r); "
+                "evaluating and scoring with in-memory model instead.",
+                exc,
+            )
+
+    # Evaluate on test set using whichever model state is currently loaded.
+    test_result = trainer.evaluate(test_data, load_best_model=False)
+    if not best_checkpoint_loaded:
+        log.warning("Best checkpoint reload was skipped; test metrics use in-memory model state.")
 
     log.info("Test results: %s", test_result)
 
