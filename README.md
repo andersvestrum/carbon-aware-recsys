@@ -5,7 +5,7 @@ This repository implements the methodology described in [docs/main.tex](docs/mai
 1. Estimate Product Carbon Footprint (PCF) for Amazon products with a retrieval-first pipeline over the Carbon Catalogue, with optional zero-shot and few-shot LLM baselines.
 2. Train three RecBole candidate generators: `BPR`, `NeuMF`, and `LightGCN`.
 3. Re-rank each user's candidate set with `score = (1 - lambda) * engagement_norm - lambda * carbon_norm`.
-4. Sweep the 16-value `lambda` grid from the paper and evaluate the engagement-carbon Pareto trade-off across `electronics`, `home_and_kitchen`, and `sports_and_outdoors`.
+4. Sweep the default `lambda` grid, including a denser tail from `0.90` to `1.00`, and evaluate the engagement-carbon Pareto trade-off across `electronics`, `home_and_kitchen`, and `sports_and_outdoors`.
 
 The maintained recommendation pipeline is intentionally limited to the models used in the paper. Exploratory alternative recommenders are not part of the current workflow.
 
