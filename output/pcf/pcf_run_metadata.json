@@ -1,0 +1,6 @@
+{
+  "llm_model": "Qwen/Qwen2.5-3B-Instruct",
+  "evaluation_rows": 866,
+  "elapsed_minutes": 561.6,
+  "seed": 42
+}
