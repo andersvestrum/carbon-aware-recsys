@@ -251,7 +251,7 @@ class OpenAILLMClient:
         *,
         api_key: str | None = None,
         base_url: str | None = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> None:
         self.model = model
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
