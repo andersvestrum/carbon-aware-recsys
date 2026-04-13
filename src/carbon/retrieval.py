@@ -22,6 +22,7 @@ from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
+from tqdm.auto import tqdm
 
 from src.data.amazon_loader import load_all_meta
 from src.data.carbon_loader import load_carbon_catalogue
@@ -251,7 +252,7 @@ class OpenAILLMClient:
         *,
         api_key: str | None = None,
         base_url: str | None = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> None:
         self.model = model
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -968,7 +969,11 @@ class PCFRetrievalEstimator:
         )
         log.info("Running %s LLM predictions for %d items", method_name, run_limit)
 
-        for row_idx in range(run_limit):
+        for row_idx in tqdm(
+            range(run_limit),
+            desc=f"LLM {method_name}",
+            unit="prompt",
+        ):
             row = df.iloc[row_idx]
             prompt = _build_llm_prompt(
                 row,
