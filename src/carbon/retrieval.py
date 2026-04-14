@@ -17,6 +17,7 @@ import os
 import random
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -1075,12 +1076,32 @@ class PCFRetrievalEstimator:
             if llm_client is not None
             else (llm_model_name or DEFAULT_LLM_MODEL)
         )
+
+        # Pre-scan cache so we can report how many live calls are actually needed.
+        cache_hits = sum(
+            1
+            for i in range(run_limit)
+            if cache.get(
+                hashlib.sha256(
+                    f"{model_name}\n{method_name}\n"
+                    f"{_build_llm_prompt(df.iloc[i], method_name=method_name, title_col=title_col, top_k=self.config.top_k)}".encode("utf-8")
+                ).hexdigest()
+            ) is not None
+        )
+        live_calls = run_limit - cache_hits
         log.info(
-            "Running %s LLM predictions for %d items (workers=%d)",
+            "%s: %d items total — %d cached, %d live calls needed (workers=%d, model=%s)",
             method_name,
             run_limit,
+            cache_hits,
+            live_calls,
             self.config.llm_workers,
+            model_name,
         )
+
+        completed = 0
+        log_interval = max(1, run_limit // 20)  # log ~every 5%
+
 
         def _predict_one(row_idx: int) -> tuple[int, float | None]:
             row = df.iloc[row_idx]
@@ -1113,15 +1134,40 @@ class PCFRetrievalEstimator:
             cache.set(cache_key, value, method=method_name, model=model_name)
             return row_idx, value
 
+        t_start = time.monotonic()
         with ThreadPoolExecutor(max_workers=self.config.llm_workers) as executor:
             futures = {executor.submit(_predict_one, i): i for i in range(run_limit)}
-            with tqdm(total=run_limit, desc=f"LLM {method_name}", unit="prompt") as pbar:
+            with tqdm(total=run_limit, desc=f"LLM {method_name}", unit="item") as pbar:
                 for future in as_completed(futures):
                     row_idx, value = future.result()
                     if value is not None:
                         predictions[row_idx] = value
                     pbar.update(1)
+                    completed += 1
+                    if completed % log_interval == 0 or completed == run_limit:
+                        elapsed = time.monotonic() - t_start
+                        rate = completed / elapsed if elapsed > 0 else 0
+                        remaining = run_limit - completed
+                        eta_s = remaining / rate if rate > 0 else float("inf")
+                        eta_min = eta_s / 60
+                        log.info(
+                            "%s progress: %d/%d (%.1f%%) — %.1f items/s — ETA %.0f min",
+                            method_name,
+                            completed,
+                            run_limit,
+                            100 * completed / run_limit,
+                            rate,
+                            eta_min,
+                        )
 
+        elapsed_total = time.monotonic() - t_start
+        log.info(
+            "%s complete: %d items in %.1f min (%.1f items/s)",
+            method_name,
+            run_limit,
+            elapsed_total / 60,
+            run_limit / elapsed_total if elapsed_total > 0 else 0,
+        )
         return predictions
 
     def _apply_llm_methods(
