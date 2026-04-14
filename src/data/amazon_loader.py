@@ -24,7 +24,7 @@ RAW_AMAZON_DIR = PROJECT_ROOT / "data" / "raw" / "amazon"
 META_DIR = RAW_AMAZON_DIR / "meta"
 
 # ── Cap on metadata rows (set to None to load all) ────────────────────
-MAX_META_ROWS = 50_000  # TODO: remove cap for full runs
+MAX_META_ROWS = None
 
 # ── Metadata file IDs (json.gz from Google Drive) ──────────────────────
 # Provide the Google Drive file IDs for each category's metadata file.

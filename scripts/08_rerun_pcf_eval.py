@@ -135,9 +135,24 @@ def main() -> None:
     full_df = predictions.copy()
     consumer_df = predictions[predictions[TRUE_PCF_COL] <= float(args.consumer_max_pcf)].copy()
 
+    # Fair comparison: same rows for every method (consumer-scale AND all base predictions present).
+    base_pred_cols = ["neighbor_average_pcf", "zero_shot_llm_pcf", "few_shot_llm_pcf"]
+    if all(c in consumer_df.columns for c in base_pred_cols):
+        intersection_mask = consumer_df[base_pred_cols].notna().all(axis=1)
+        consumer_intersection_df = consumer_df[intersection_mask].copy()
+    else:
+        consumer_intersection_df = consumer_df.iloc[0:0].copy()
+
     rows: list[dict[str, object]] = []
     rows.extend(_evaluate_subset(full_df, "full_holdout"))
     rows.extend(_evaluate_subset(consumer_df, f"consumer_scale_true_pcf_le_{int(args.consumer_max_pcf)}"))
+    if not consumer_intersection_df.empty:
+        rows.extend(
+            _evaluate_subset(
+                consumer_intersection_df,
+                "consumer_scale_intersection_all_methods",
+            )
+        )
 
     metrics = pd.DataFrame(rows)
     args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
