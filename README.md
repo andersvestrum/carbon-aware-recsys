@@ -20,6 +20,12 @@ python3 -m venv .venv
 
 This repository keeps the methodology as explicit stepwise scripts.
 
+### Tracked vs ignored outputs
+
+`.gitignore` excludes large or regenerable paths: `data/raw/`, `data/interim/`, `data/processed/`, `output/results/`, and `output/models/`. **`output/pcf/`** and **`output/figures/`** are not ignored, so PCF evaluation CSVs and figure PNGs can live in the repo and travel with a clone—no need to rerun plotting scripts unless you change inputs.
+
+For a full end-to-end checklist (including optional paths for `predict_carbon.py` and PCF post-processing), see [docs/FINAL_RUN.md](docs/FINAL_RUN.md).
+
 ## Colab GPU Workflow
 
 For the fastest Colab setup, use:
@@ -57,12 +63,14 @@ OPENAI_API_KEY=... ./.venv/bin/python scripts/predict_carbon.py \
   --amazon-limit 0
 ```
 
-Outputs:
+Outputs (defaults; override with `--eval-output` / `--metrics-output` / `--amazon-output`):
 
 - `data/processed/carbon/amazon_pcf_predictions.csv`
 - `output/results/carbon/pcf_evaluation_predictions.csv`
 - `output/results/carbon/pcf_evaluation_metrics.csv`
 - `output/results/carbon/pcf_run_metadata.json`
+
+The [final run guide](docs/FINAL_RUN.md) recommends writing evaluation CSVs under **`output/pcf/`** when you want them versioned alongside PCF figures (see *Tracked vs ignored outputs* above). `output/results/` remains gitignored.
 
 ### 2. Train candidate generators
 
