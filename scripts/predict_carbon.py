@@ -95,7 +95,8 @@ def parse_args() -> argparse.Namespace:
         "--llm-amazon-limit",
         type=int,
         default=0,
-        help="Optional number of Amazon rows to score with the LLM baselines.",
+        help="Number of Amazon rows to score with the LLM baselines. "
+        "Default 0 skips LLM. Use -1 for all rows.",
     )
     parser.add_argument(
         "--llm-model",
@@ -133,6 +134,13 @@ def parse_args() -> argparse.Namespace:
         "--non-deterministic",
         action="store_true",
         help="Disable deterministic retrieval settings.",
+    )
+    parser.add_argument(
+        "--llm-workers",
+        type=int,
+        default=1,
+        help="Number of concurrent LLM prediction workers (default: 1). "
+        "Increase for API-based or vLLM-backed models.",
     )
     parser.add_argument(
         "--llm-cache-only",
@@ -254,6 +262,7 @@ def _build_estimator(
         random_seed=args.seed,
         deterministic=deterministic,
         num_threads=args.num_threads,
+        llm_workers=args.llm_workers,
     )
     return PCFRetrievalEstimator(config)
 
@@ -288,7 +297,8 @@ def _build_run_metadata(
         "evaluation_rows": int(len(eval_predictions)),
         "llm_enabled": llm_client is not None,
         "llm_model": args.llm_model if llm_client is not None else None,
-        "llm_amazon_limit": args.llm_amazon_limit,
+        "llm_amazon_limit": None if args.llm_amazon_limit < 0 else args.llm_amazon_limit,
+        "llm_workers": args.llm_workers,
         "llm_cache_only": args.llm_cache_only,
         "amazon_output": str(amazon_output),
         "evaluation_output": str(eval_output),
@@ -335,12 +345,13 @@ def main() -> None:
 
     amazon_meta = _load_amazon_metadata(args.amazon_limit)
 
+    llm_amazon_limit = None if args.llm_amazon_limit < 0 else args.llm_amazon_limit
     amazon_predictions = estimator.predict_amazon_products(
         amazon_meta,
         llm_client=llm_client,
         llm_model_name=args.llm_model,
         llm_cache_path=llm_cache_path,
-        llm_limit=args.llm_amazon_limit,
+        llm_limit=llm_amazon_limit,
         llm_cache_only=args.llm_cache_only,
     )
 
