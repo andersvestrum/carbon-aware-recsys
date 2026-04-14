@@ -191,6 +191,13 @@ def parse_args() -> argparse.Namespace:
         help="Disable deterministic retrieval settings.",
     )
     parser.add_argument(
+        "--llm-workers",
+        type=int,
+        default=1,
+        help="Number of concurrent LLM prediction workers (default: 1). "
+        "Increase for API-based or vLLM-backed models.",
+    )
+    parser.add_argument(
         "--llm-cache-only",
         action="store_true",
         help="Use only cached LLM responses; do not make live API calls.",
@@ -377,6 +384,7 @@ def _build_estimator(
         random_seed=args.seed,
         deterministic=deterministic,
         num_threads=args.num_threads,
+        llm_workers=args.llm_workers,
     )
     return PCFRetrievalEstimator(config)
 
@@ -478,6 +486,7 @@ def main() -> None:
         categories=args.amazon_categories,
     )
 
+    llm_amazon_limit = None if args.llm_amazon_limit < 0 else args.llm_amazon_limit
     amazon_predictions = estimator.predict_amazon_products(
         amazon_meta,
         llm_client=llm_client,

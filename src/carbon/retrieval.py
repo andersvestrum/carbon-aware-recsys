@@ -16,6 +16,8 @@ import logging
 import os
 import random
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, Sequence
@@ -100,6 +102,7 @@ class RetrievalConfig:
     random_seed: int = 42
     deterministic: bool = True
     num_threads: int = 1
+    llm_workers: int = 1
 
 
 def set_global_determinism(
@@ -148,6 +151,7 @@ class JsonlPredictionCache:
     def __init__(self, path: Path | None) -> None:
         self._path = Path(path) if path is not None else None
         self._records: dict[str, float] = {}
+        self._lock = threading.Lock()
 
         if self._path is not None and self._path.exists():
             with self._path.open("r", encoding="utf-8") as handle:
@@ -161,20 +165,22 @@ class JsonlPredictionCache:
                     self._records[key] = value
 
     def get(self, key: str) -> float | None:
-        return self._records.get(key)
+        with self._lock:
+            return self._records.get(key)
 
     def set(self, key: str, value: float, **metadata: Any) -> None:
-        if key in self._records:
-            return
+        with self._lock:
+            if key in self._records:
+                return
 
-        self._records[key] = value
-        if self._path is None:
-            return
+            self._records[key] = value
+            if self._path is None:
+                return
 
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        record = {"key": key, "value": float(value), **metadata}
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record) + "\n")
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            record = {"key": key, "value": float(value), **metadata}
+            with self._path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
 
 
 class SentenceTransformerEncoder:
@@ -1069,13 +1075,14 @@ class PCFRetrievalEstimator:
             if llm_client is not None
             else (llm_model_name or DEFAULT_LLM_MODEL)
         )
-        log.info("Running %s LLM predictions for %d items", method_name, run_limit)
+        log.info(
+            "Running %s LLM predictions for %d items (workers=%d)",
+            method_name,
+            run_limit,
+            self.config.llm_workers,
+        )
 
-        for row_idx in tqdm(
-            range(run_limit),
-            desc=f"LLM {method_name}",
-            unit="prompt",
-        ):
+        def _predict_one(row_idx: int) -> tuple[int, float | None]:
             row = df.iloc[row_idx]
             prompt = _build_llm_prompt(
                 row,
@@ -1083,17 +1090,14 @@ class PCFRetrievalEstimator:
                 title_col=title_col,
                 top_k=self.config.top_k,
             )
-
             cache_key = hashlib.sha256(
                 f"{model_name}\n{method_name}\n{prompt}".encode("utf-8")
             ).hexdigest()
             cached = cache.get(cache_key)
             if cached is not None:
-                predictions[row_idx] = cached
-                continue
+                return row_idx, cached
             if cache_only:
-                continue
-
+                return row_idx, None
             try:
                 if llm_client is None:
                     raise RuntimeError("Live LLM prediction requested without an LLM client.")
@@ -1105,15 +1109,18 @@ class PCFRetrievalEstimator:
                     row_idx,
                     exc,
                 )
-                continue
+                return row_idx, None
+            cache.set(cache_key, value, method=method_name, model=model_name)
+            return row_idx, value
 
-            predictions[row_idx] = value
-            cache.set(
-                cache_key,
-                value,
-                method=method_name,
-                model=model_name,
-            )
+        with ThreadPoolExecutor(max_workers=self.config.llm_workers) as executor:
+            futures = {executor.submit(_predict_one, i): i for i in range(run_limit)}
+            with tqdm(total=run_limit, desc=f"LLM {method_name}", unit="prompt") as pbar:
+                for future in as_completed(futures):
+                    row_idx, value = future.result()
+                    if value is not None:
+                        predictions[row_idx] = value
+                    pbar.update(1)
 
         return predictions
 
