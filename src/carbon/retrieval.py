@@ -62,6 +62,8 @@ DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_LLM_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 DEFAULT_LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
 DEFAULT_TOP_K = 5
+DEFAULT_LLM_REASONING_STYLE = "detailed"
+LLM_REASONING_STYLES = ("detailed", "terse")
 DEFAULT_SELECTED_PCF_COL = "pcf"
 PREDICTION_METHOD_TO_COLUMN = {
     "neighbor_average": "neighbor_average_pcf",
@@ -86,6 +88,39 @@ _WHITESPACE_RE = re.compile(r"\s+")
 # outputs so zero-shot scale errors don't dominate metrics.
 PCF_KG_MIN = 0.01
 PCF_KG_MAX = 10_000.0
+
+
+def _resolve_reasoning_style(reasoning_style: str) -> str:
+    style = str(reasoning_style).strip().lower()
+    if style not in LLM_REASONING_STYLES:
+        raise ValueError(
+            f"Unsupported llm reasoning style {reasoning_style!r}. "
+            f"Choose one of: {', '.join(LLM_REASONING_STYLES)}."
+        )
+    return style
+
+
+def _system_prompt_for_style(reasoning_style: str) -> str:
+    style = _resolve_reasoning_style(reasoning_style)
+    if style == "terse":
+        return (
+            "You are an expert in product life-cycle assessment (LCA) and carbon "
+            "footprint estimation. Given a product description, estimate its "
+            "Product Carbon Footprint (PCF) in kilograms of CO2 equivalent "
+            "(kg CO2e), covering the full product life cycle (manufacturing, "
+            "transport, use, and end-of-life).\n"
+            "Provide a short reasoning in one sentence before the final answer.\n"
+            "Output your final answer strictly as: PCF: X.X kg CO2e"
+        )
+    return (
+        "You are an expert in product life-cycle assessment (LCA) and carbon "
+        "footprint estimation. Given a product description, estimate its "
+        "Product Carbon Footprint (PCF) in kilograms of CO2 equivalent "
+        "(kg CO2e), covering the full product life cycle (manufacturing, "
+        "transport, use, and end-of-life).\n"
+        "Always reason step by step before stating your final answer.\n"
+        "Output your final answer strictly as: PCF: X.X kg CO2e"
+    )
 
 
 @dataclass
@@ -255,15 +290,8 @@ class NumericLLMClient(Protocol):
 class OpenAILLMClient:
     """Thin OpenAI client that returns a single numeric prediction."""
 
-    system_prompt = (
-        "You are an expert in product life-cycle assessment (LCA) and carbon "
-        "footprint estimation. Given a product description, estimate its "
-        "Product Carbon Footprint (PCF) in kilograms of CO2 equivalent "
-        "(kg CO2e), covering the full product life cycle (manufacturing, "
-        "transport, use, and end-of-life).\n"
-        "Always reason step by step before stating your final answer.\n"
-        "Output your final answer strictly as: PCF: X.X kg CO2e"
-    )
+    system_prompt = _system_prompt_for_style("detailed")
+    terse_system_prompt = _system_prompt_for_style("terse")
 
     def __init__(
         self,
@@ -272,11 +300,15 @@ class OpenAILLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         timeout: float = 300.0,
+        reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
+        system_prompt: str | None = None,
     ) -> None:
         self.model = model
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
         self.timeout = timeout
+        self.reasoning_style = _resolve_reasoning_style(reasoning_style)
+        self.system_prompt = system_prompt or _system_prompt_for_style(self.reasoning_style)
         self._client: Any | None = None
 
     @property
@@ -360,6 +392,7 @@ class TransformersLLMClient:
     """Local HuggingFace text-generation client with the same numeric API."""
 
     system_prompt = OpenAILLMClient.system_prompt
+    terse_system_prompt = OpenAILLMClient.terse_system_prompt
 
     def __init__(
         self,
@@ -368,11 +401,15 @@ class TransformersLLMClient:
         torch_dtype: str = "auto",
         device_map: str = "auto",
         max_new_tokens: int = 384,
+        reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
+        system_prompt: str | None = None,
     ) -> None:
         self.model = model
         self.torch_dtype = torch_dtype
         self.device_map = device_map
         self.max_new_tokens = max_new_tokens
+        self.reasoning_style = _resolve_reasoning_style(reasoning_style)
+        self.system_prompt = system_prompt or _system_prompt_for_style(self.reasoning_style)
         self._pipe: Any | None = None
 
     @property
@@ -633,19 +670,29 @@ def prepare_amazon_metadata(
     return prepared.reset_index(drop=True)
 
 
-def build_zero_shot_prompt(product_title: str) -> str:
+def build_zero_shot_prompt(
+    product_title: str,
+    *,
+    reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
+) -> str:
     """Prompt for the zero-shot LLM baseline.
 
     Uses the same chain-of-thought + structured output convention as the
     few-shot prompt so the two baselines share a parser and output format.
     """
+    style = _resolve_reasoning_style(reasoning_style)
+    reasoning_line = (
+        "Short reasoning (1 sentence): [briefly explain material and category reasoning]"
+        if style == "terse"
+        else "Step-by-step reasoning: [explain material, weight, "
+        "manufacturing complexity, and category reasoning]"
+    )
     return (
         "## Query product\n"
         f"Product: {product_title}\n"
         "PCF: ?\n\n"
         "## Response format\n"
-        "Step-by-step reasoning: [explain material, weight, "
-        "manufacturing complexity, and category reasoning]\n"
+        f"{reasoning_line}\n"
         "PCF: X.X kg CO2e"
     )
 
@@ -653,6 +700,8 @@ def build_zero_shot_prompt(product_title: str) -> str:
 def build_few_shot_prompt(
     product_title: str,
     neighbors: Sequence[dict[str, Any]],
+    *,
+    reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
 ) -> str:
     """Retrieval-augmented few-shot prompt with chain-of-thought reasoning.
 
@@ -661,13 +710,26 @@ def build_few_shot_prompt(
     response format. Each reference example includes its cosine similarity
     so the model can weight anchors accordingly.
     """
+    style = _resolve_reasoning_style(reasoning_style)
+    instructions_suffix = (
+        " Keep the reasoning concise (one short sentence)."
+        if style == "terse"
+        else ""
+    )
+    response_reasoning_line = (
+        "Short reasoning (1 sentence): [briefly explain material and category reasoning]"
+        if style == "terse"
+        else "Step-by-step reasoning: [explain material, weight, "
+        "manufacturing complexity, and category reasoning]"
+    )
+
     lines = [
         "## Instructions",
         f"{len(neighbors)} reference products are provided below, ranked "
         "by cosine similarity of their sentence embeddings to the query "
         "product. Use them as calibration anchors. When reasoning, "
         "consider: material composition, product weight, manufacturing "
-        "complexity, and product category.",
+        f"complexity, and product category.{instructions_suffix}",
         "",
         "## Reference examples (ranked by embedding similarity)",
     ]
@@ -694,8 +756,7 @@ def build_few_shot_prompt(
             "PCF: ?",
             "",
             "## Response format",
-            "Step-by-step reasoning: [explain material, weight, "
-            "manufacturing complexity, and category reasoning]",
+            response_reasoning_line,
             "PCF: X.X kg CO2e",
         ]
     )
@@ -721,12 +782,17 @@ def _build_llm_prompt(
     method_name: str,
     title_col: str,
     top_k: int,
+    reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
 ) -> str:
     title = str(row[title_col])
     if method_name == "zero_shot_llm":
-        return build_zero_shot_prompt(title)
+        return build_zero_shot_prompt(title, reasoning_style=reasoning_style)
     if method_name == "few_shot_llm":
-        return build_few_shot_prompt(title, _neighbor_examples_from_row(row, top_k))
+        return build_few_shot_prompt(
+            title,
+            _neighbor_examples_from_row(row, top_k),
+            reasoning_style=reasoning_style,
+        )
     raise ValueError(f"Unsupported LLM method: {method_name}")
 
 
@@ -1059,6 +1125,7 @@ class PCFRetrievalEstimator:
         cache_path: Path | None,
         limit: int | None,
         cache_only: bool = False,
+        reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
     ) -> np.ndarray:
         predictions = np.full(len(df), np.nan, dtype=float)
         if llm_client is None and not cache_only:
@@ -1084,7 +1151,8 @@ class PCFRetrievalEstimator:
             if cache.get(
                 hashlib.sha256(
                     f"{model_name}\n{method_name}\n"
-                    f"{_build_llm_prompt(df.iloc[i], method_name=method_name, title_col=title_col, top_k=self.config.top_k)}".encode("utf-8")
+                    f"{reasoning_style}\n"
+                    f"{_build_llm_prompt(df.iloc[i], method_name=method_name, title_col=title_col, top_k=self.config.top_k, reasoning_style=reasoning_style)}".encode("utf-8")
                 ).hexdigest()
             ) is not None
         )
@@ -1110,9 +1178,10 @@ class PCFRetrievalEstimator:
                 method_name=method_name,
                 title_col=title_col,
                 top_k=self.config.top_k,
+                reasoning_style=reasoning_style,
             )
             cache_key = hashlib.sha256(
-                f"{model_name}\n{method_name}\n{prompt}".encode("utf-8")
+                f"{model_name}\n{method_name}\n{reasoning_style}\n{prompt}".encode("utf-8")
             ).hexdigest()
             cached = cache.get(cache_key)
             if cached is not None:
@@ -1181,6 +1250,7 @@ class PCFRetrievalEstimator:
         llm_limit: int | None,
         llm_cache_only: bool,
         methods: Sequence[str] = LLM_METHODS,
+        reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
     ) -> pd.DataFrame:
         result = df.copy()
         for method_name in methods:
@@ -1193,6 +1263,7 @@ class PCFRetrievalEstimator:
                 cache_path=llm_cache_path,
                 limit=llm_limit,
                 cache_only=llm_cache_only,
+                reasoning_style=reasoning_style,
             )
         return result
 
@@ -1206,6 +1277,7 @@ class PCFRetrievalEstimator:
         llm_cache_path: Path | None = None,
         llm_cache_only: bool = False,
         llm_methods: Sequence[str] = LLM_METHODS,
+        llm_reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Evaluate nearest-neighbor, zero-shot LLM, and few-shot LLM methods.
@@ -1235,6 +1307,7 @@ class PCFRetrievalEstimator:
             llm_limit=len(retrieved),
             llm_cache_only=llm_cache_only,
             methods=llm_methods,
+            reasoning_style=llm_reasoning_style,
         )
         return retrieved, _build_metrics_frame(retrieved)
 
@@ -1248,6 +1321,7 @@ class PCFRetrievalEstimator:
         llm_limit: int | None = None,
         llm_cache_only: bool = False,
         llm_methods: Sequence[str] = LLM_METHODS,
+        llm_reasoning_style: str = DEFAULT_LLM_REASONING_STYLE,
     ) -> pd.DataFrame:
         """Predict PCF for Amazon products using retrieval and optional LLMs."""
         prepared = prepare_amazon_metadata(
@@ -1271,6 +1345,7 @@ class PCFRetrievalEstimator:
             llm_limit=llm_limit,
             llm_cache_only=llm_cache_only,
             methods=llm_methods,
+            reasoning_style=llm_reasoning_style,
         )
         retrieved = _select_final_pcf(retrieved)
         return retrieved[_amazon_output_columns(retrieved, self.config.top_k)].copy()

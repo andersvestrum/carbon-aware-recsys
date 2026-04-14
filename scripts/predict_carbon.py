@@ -35,7 +35,9 @@ from src.carbon.retrieval import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LOCAL_LLM_MODEL,
+    DEFAULT_LLM_REASONING_STYLE,
     LLM_METHODS,
+    LLM_REASONING_STYLES,
     DEFAULT_TOP_K,
     NumericLLMClient,
     PROCESSED_CARBON_DIR,
@@ -142,6 +144,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=384,
         help="max_new_tokens for the local Transformers backend.",
+    )
+    parser.add_argument(
+        "--llm-reasoning-style",
+        choices=LLM_REASONING_STYLES,
+        default=DEFAULT_LLM_REASONING_STYLE,
+        help="Prompt verbosity style for LLM methods (default: detailed).",
     )
     parser.add_argument(
         "--skip-llm",
@@ -254,11 +262,15 @@ def _build_llm_client(args: argparse.Namespace) -> NumericLLMClient | None:
             torch_dtype=args.transformers_torch_dtype,
             device_map=args.transformers_device_map,
             max_new_tokens=args.transformers_max_new_tokens,
+            reasoning_style=args.llm_reasoning_style,
         )
         log.info("Using local Transformers LLM backend with model %s", llm_model)
         return client
 
-    client = OpenAILLMClient(model=llm_model)
+    client = OpenAILLMClient(
+        model=llm_model,
+        reasoning_style=args.llm_reasoning_style,
+    )
     if client.is_available:
         return client
 
@@ -428,6 +440,8 @@ def _build_run_metadata(
         "eval_llm_methods": list(eval_llm_methods),
         "amazon_llm_methods": list(amazon_llm_methods),
         "llm_amazon_limit": llm_amazon_limit,
+        "llm_reasoning_style": args.llm_reasoning_style,
+        "transformers_max_new_tokens": args.transformers_max_new_tokens,
         "llm_cache_only": args.llm_cache_only,
         "amazon_output": str(amazon_output),
         "evaluation_output": str(eval_output),
@@ -479,6 +493,7 @@ def main() -> None:
         llm_cache_path=llm_cache_path,
         llm_cache_only=args.llm_cache_only,
         llm_methods=eval_llm_methods,
+        llm_reasoning_style=args.llm_reasoning_style,
     )
 
     amazon_meta = _load_selected_amazon_metadata(
@@ -495,6 +510,7 @@ def main() -> None:
         llm_limit=llm_amazon_limit,
         llm_cache_only=args.llm_cache_only,
         llm_methods=amazon_llm_methods,
+        llm_reasoning_style=args.llm_reasoning_style,
     )
 
     output_paths = _resolve_output_paths(args)
