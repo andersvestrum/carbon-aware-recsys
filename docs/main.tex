@@ -459,7 +459,10 @@ neighbour-average estimate. For each Amazon catalog item, we embed its
 title, retrieve the five nearest Carbon Catalogue neighbours, and retain
 the resulting product-level estimate $\mathrm{PCF}_i$; items with
 insufficient metadata for embedding are excluded from downstream
-analysis.
+analysis. In the reported run, the full Amazon catalog is scored
+with the local \texttt{Qwen/Qwen2.5-3B-Instruct} few-shot pipeline, so the
+selected PCF column is intended to be driven by local Qwen predictions
+rather than by the neighbour-only fallback.
 
 
 
@@ -512,7 +515,7 @@ We evaluate the proposed framework on the Amazon Reviews dataset as a large-scal
 
 \subsection{Experimental Setup}
 
-We follow the pipeline described in Section~4. For each product category, we train candidate generation models using the timestamp-based train/validation/test split and then apply carbon-aware re-ranking directly on the resulting relevance scores. Unless otherwise stated, all evaluation is performed on top-10 recommendation lists, and $\lambda$ is swept over a grid of 16 values spanning $[0, 1]$, with finer spacing in the low-$\lambda$ region (steps of 0.025 for $\lambda \leq 0.1$, coarser steps of 0.1 thereafter up to $\lambda = 1$).
+We follow the pipeline described in Section~4. For each product category, we train candidate generation models using the timestamp-based train/validation/test split and then apply carbon-aware re-ranking directly on the resulting relevance scores. Unless otherwise stated, all evaluation is performed on top-10 recommendation lists, and $\lambda$ is swept over a dense grid spanning $[0, 1]$, with finer spacing in the low-$\lambda$ region (steps of 0.025 for $\lambda \leq 0.1$), coarser steps through $\lambda=0.8$, and an explicit tail from $\lambda=0.90$ to $\lambda=1.00$ in steps of 0.01.
 
 \subsection{Candidate Generation Baselines}
 
@@ -1130,7 +1133,8 @@ Parameter & Value \\
 Candidate pool size from RecBole & 100 \\
 Final re-ranked list size & 10 \\
 $\lambda$ grid & 0.0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25, \\
-               & 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0 \\
+               & 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.91, 0.92, \\
+               & 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0 \\
 Engagement normalisation & Per-user min-max to $[0,1]$ \\
 Carbon normalisation     & Global min-max to $[0,1]$ \\
 User scoring batch size  & 1{,}024 \\
