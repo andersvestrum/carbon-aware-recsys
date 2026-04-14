@@ -8,7 +8,8 @@ Outputs:
 
 Notes:
     - The nearest-neighbor baseline runs across the full Amazon metadata set.
-    - LLM baselines are optional and require OPENAI_API_KEY.
+    - LLM baselines are optional and can run either via OpenAI or a local
+      HuggingFace Transformers model.
     - If LLM evaluation is enabled without an explicit evaluation limit, the
       script defaults to 100 Carbon Catalogue examples to control cost.
       Pass --evaluation-limit -1 to evaluate the full catalogue.
@@ -29,19 +30,26 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.data.amazon_loader import load_meta
 from src.carbon.retrieval import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_LLM_MODEL,
+    DEFAULT_LOCAL_LLM_MODEL,
+    LLM_METHODS,
     DEFAULT_TOP_K,
+    NumericLLMClient,
     PROCESSED_CARBON_DIR,
     RESULTS_DIR,
     OpenAILLMClient,
     PCFRetrievalEstimator,
     RetrievalConfig,
+    TransformersLLMClient,
     set_global_determinism,
 )
 
 log = logging.getLogger(__name__)
+
+ALL_AMAZON_CATEGORIES = ("electronics", "home_and_kitchen", "sports_and_outdoors")
 
 
 @dataclass(frozen=True)
@@ -92,20 +100,68 @@ def parse_args() -> argparse.Namespace:
         help="Optional number of Amazon metadata rows to score.",
     )
     parser.add_argument(
+        "--amazon-categories",
+        nargs="+",
+        choices=ALL_AMAZON_CATEGORIES,
+        default=None,
+        help="Optional subset of Amazon metadata categories to score. "
+        "Useful for parallel sharded runs.",
+    )
+    parser.add_argument(
         "--llm-amazon-limit",
         type=int,
-        default=0,
-        help="Optional number of Amazon rows to score with the LLM baselines.",
+        default=None,
+        help="Optional number of Amazon rows to score with the LLM baselines. "
+        "Use -1 for all rows. Defaults to 0 for OpenAI and all rows for local Transformers.",
+    )
+    parser.add_argument(
+        "--llm-backend",
+        choices=("openai", "transformers"),
+        default="openai",
+        help="Backend used for the zero-shot and few-shot LLM baselines.",
     )
     parser.add_argument(
         "--llm-model",
-        default=DEFAULT_LLM_MODEL,
-        help="OpenAI model name for zero-shot and few-shot baselines.",
+        default=None,
+        help="Model name for the chosen LLM backend. "
+        "Defaults to gpt-4.1-mini for OpenAI and Qwen/Qwen2.5-3B-Instruct for local Transformers.",
+    )
+    parser.add_argument(
+        "--transformers-device-map",
+        default="auto",
+        help="device_map passed to HuggingFace pipeline when --llm-backend transformers.",
+    )
+    parser.add_argument(
+        "--transformers-torch-dtype",
+        choices=("auto", "float16", "bfloat16", "float32"),
+        default="auto",
+        help="Torch dtype for the local Transformers backend.",
+    )
+    parser.add_argument(
+        "--transformers-max-new-tokens",
+        type=int,
+        default=384,
+        help="max_new_tokens for the local Transformers backend.",
     )
     parser.add_argument(
         "--skip-llm",
         action="store_true",
         help="Skip zero-shot and few-shot LLM baselines.",
+    )
+    parser.add_argument(
+        "--eval-llm-methods",
+        nargs="+",
+        choices=LLM_METHODS,
+        default=None,
+        help="LLM methods to run for Carbon Catalogue evaluation. Defaults to both.",
+    )
+    parser.add_argument(
+        "--amazon-llm-methods",
+        nargs="+",
+        choices=LLM_METHODS,
+        default=None,
+        help="LLM methods to run for Amazon scoring. Defaults to both. "
+        "Use `few_shot_llm` for the downstream recommender pipeline.",
     )
     parser.add_argument(
         "--no-amazon-metadata",
@@ -167,19 +223,42 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _build_llm_client(args: argparse.Namespace) -> OpenAILLMClient | None:
+def _resolve_llm_model(args: argparse.Namespace) -> str:
+    if args.llm_model:
+        return args.llm_model
+    if args.llm_backend == "transformers":
+        return DEFAULT_LOCAL_LLM_MODEL
+    return DEFAULT_LLM_MODEL
+
+
+def _resolve_llm_methods(methods: list[str] | None) -> tuple[str, ...]:
+    return tuple(methods) if methods else LLM_METHODS
+
+
+def _build_llm_client(args: argparse.Namespace) -> NumericLLMClient | None:
     if args.skip_llm:
         log.info("Skipping LLM baselines by request.")
         return None
 
-    client = OpenAILLMClient(model=args.llm_model)
+    llm_model = _resolve_llm_model(args)
+    if args.llm_backend == "transformers":
+        client = TransformersLLMClient(
+            model=llm_model,
+            torch_dtype=args.transformers_torch_dtype,
+            device_map=args.transformers_device_map,
+            max_new_tokens=args.transformers_max_new_tokens,
+        )
+        log.info("Using local Transformers LLM backend with model %s", llm_model)
+        return client
+
+    client = OpenAILLMClient(model=llm_model)
     if client.is_available:
         return client
 
     if args.llm_cache_only:
         log.info(
             "OPENAI_API_KEY not found. Replaying cached LLM responses only for model %s.",
-            args.llm_model,
+            llm_model,
         )
         return None
 
@@ -211,7 +290,7 @@ def _save_amazon_predictions(
 
 def _resolve_evaluation_limit(
     requested_limit: int | None,
-    llm_client: OpenAILLMClient | None,
+    llm_client: NumericLLMClient | None,
 ) -> int | None:
     if requested_limit is not None and requested_limit < 0:
         return None
@@ -225,12 +304,56 @@ def _resolve_evaluation_limit(
     return 100
 
 
+def _resolve_llm_amazon_limit(
+    requested_limit: int | None,
+    *,
+    llm_client: NumericLLMClient | None,
+    llm_backend: str,
+) -> int | None:
+    if requested_limit is not None and requested_limit < 0:
+        return None
+    if requested_limit is not None:
+        return requested_limit
+    if llm_client is None:
+        return 0
+    if llm_backend == "transformers":
+        log.info(
+            "Local Transformers LLM enabled without --llm-amazon-limit. "
+            "Defaulting to all Amazon rows."
+        )
+        return None
+    log.info(
+        "OpenAI LLM enabled without --llm-amazon-limit. "
+        "Defaulting to 0 Amazon rows to control cost."
+    )
+    return 0
+
+
 def _load_amazon_metadata(limit: int | None) -> pd.DataFrame:
+    return _load_selected_amazon_metadata(limit=limit, categories=None)
+
+
+def _load_selected_amazon_metadata(
+    *,
+    limit: int | None,
+    categories: list[str] | None,
+) -> pd.DataFrame:
     if limit == 0:
         log.info("Amazon scoring disabled with --amazon-limit 0.")
         return pd.DataFrame()
 
-    amazon_meta = PCFRetrievalEstimator.load_all_amazon_metadata()
+    if categories:
+        frames = []
+        log.info("Loading Amazon metadata for categories: %s", ", ".join(categories))
+        for category in categories:
+            frame = load_meta(category)
+            copy = frame.copy()
+            copy["source_category"] = category
+            frames.append(copy)
+        amazon_meta = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    else:
+        amazon_meta = PCFRetrievalEstimator.load_all_amazon_metadata()
+
     if limit is not None and limit < len(amazon_meta):
         amazon_meta = amazon_meta.head(limit).copy()
         log.info("Scoring a limited Amazon slice: %s products", f"{len(amazon_meta):,}")
@@ -271,7 +394,11 @@ def _build_run_metadata(
     args: argparse.Namespace,
     *,
     deterministic: bool,
-    llm_client: OpenAILLMClient | None,
+    llm_client: NumericLLMClient | None,
+    llm_model: str | None,
+    llm_amazon_limit: int | None,
+    eval_llm_methods: Sequence[str],
+    amazon_llm_methods: Sequence[str],
     amazon_predictions: pd.DataFrame,
     eval_predictions: pd.DataFrame,
     amazon_output: Path,
@@ -287,8 +414,12 @@ def _build_run_metadata(
         "amazon_rows": int(len(amazon_predictions)),
         "evaluation_rows": int(len(eval_predictions)),
         "llm_enabled": llm_client is not None,
-        "llm_model": args.llm_model if llm_client is not None else None,
-        "llm_amazon_limit": args.llm_amazon_limit,
+        "llm_backend": args.llm_backend if llm_client is not None else None,
+        "llm_model": llm_model if llm_client is not None else None,
+        "amazon_categories": args.amazon_categories,
+        "eval_llm_methods": list(eval_llm_methods),
+        "amazon_llm_methods": list(amazon_llm_methods),
+        "llm_amazon_limit": llm_amazon_limit,
         "llm_cache_only": args.llm_cache_only,
         "amazon_output": str(amazon_output),
         "evaluation_output": str(eval_output),
@@ -311,7 +442,10 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
 
+    llm_model = _resolve_llm_model(args)
     llm_client = _build_llm_client(args)
+    eval_llm_methods = _resolve_llm_methods(args.eval_llm_methods)
+    amazon_llm_methods = _resolve_llm_methods(args.amazon_llm_methods)
     deterministic = not args.non_deterministic
     set_global_determinism(
         args.seed,
@@ -319,6 +453,11 @@ def main() -> None:
         num_threads=args.num_threads,
     )
     evaluation_limit = _resolve_evaluation_limit(args.evaluation_limit, llm_client)
+    llm_amazon_limit = _resolve_llm_amazon_limit(
+        args.llm_amazon_limit,
+        llm_client=llm_client,
+        llm_backend=args.llm_backend,
+    )
     estimator = _build_estimator(args, deterministic=deterministic)
 
     estimator.fit_carbon_catalogue()
@@ -328,20 +467,25 @@ def main() -> None:
         limit=evaluation_limit,
         random_state=args.seed,
         llm_client=llm_client,
-        llm_model_name=args.llm_model,
+        llm_model_name=llm_model,
         llm_cache_path=llm_cache_path,
         llm_cache_only=args.llm_cache_only,
+        llm_methods=eval_llm_methods,
     )
 
-    amazon_meta = _load_amazon_metadata(args.amazon_limit)
+    amazon_meta = _load_selected_amazon_metadata(
+        limit=args.amazon_limit,
+        categories=args.amazon_categories,
+    )
 
     amazon_predictions = estimator.predict_amazon_products(
         amazon_meta,
         llm_client=llm_client,
-        llm_model_name=args.llm_model,
+        llm_model_name=llm_model,
         llm_cache_path=llm_cache_path,
-        llm_limit=args.llm_amazon_limit,
+        llm_limit=llm_amazon_limit,
         llm_cache_only=args.llm_cache_only,
+        llm_methods=amazon_llm_methods,
     )
 
     output_paths = _resolve_output_paths(args)
@@ -358,6 +502,10 @@ def main() -> None:
         args,
         deterministic=deterministic,
         llm_client=llm_client,
+        llm_model=llm_model,
+        llm_amazon_limit=llm_amazon_limit,
+        eval_llm_methods=eval_llm_methods,
+        amazon_llm_methods=amazon_llm_methods,
         amazon_predictions=amazon_predictions,
         eval_predictions=eval_predictions,
         amazon_output=output_paths.amazon,

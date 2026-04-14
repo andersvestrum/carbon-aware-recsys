@@ -22,8 +22,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / "output" / "results"
-DEFAULT_FIGURE_DIR = PROJECT_ROOT / "docs"
-DEFAULT_CARBON_RESULTS_DIR = PROJECT_ROOT / "output" / "results" / "carbon"
+DEFAULT_FIGURE_DIR = PROJECT_ROOT / "output" / "figures"
+DEFAULT_CARBON_RESULTS_DIR = PROJECT_ROOT / "output" / "pcf"
 DEFAULT_CARBON_CACHE_DIR = PROJECT_ROOT / "data" / "processed" / "carbon"
 
 
