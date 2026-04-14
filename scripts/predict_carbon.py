@@ -11,6 +11,7 @@ Notes:
     - LLM baselines are optional and require OPENAI_API_KEY.
     - If LLM evaluation is enabled without an explicit evaluation limit, the
       script defaults to 100 Carbon Catalogue examples to control cost.
+      Pass --evaluation-limit -1 to evaluate the full catalogue.
 """
 
 from __future__ import annotations
@@ -81,7 +82,8 @@ def parse_args() -> argparse.Namespace:
         "--evaluation-limit",
         type=int,
         default=None,
-        help="Optional number of Carbon Catalogue items to evaluate.",
+        help="Carbon Catalogue eval size; omit for default (100 if LLM on, else full). "
+        "Use -1 for the full catalogue.",
     )
     parser.add_argument(
         "--amazon-limit",
@@ -211,6 +213,8 @@ def _resolve_evaluation_limit(
     requested_limit: int | None,
     llm_client: OpenAILLMClient | None,
 ) -> int | None:
+    if requested_limit is not None and requested_limit < 0:
+        return None
     if requested_limit is not None or llm_client is None:
         return requested_limit
 
