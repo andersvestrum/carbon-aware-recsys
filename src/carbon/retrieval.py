@@ -18,7 +18,7 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Protocol, Sequence
 
 import numpy as np
 import pandas as pd
@@ -57,6 +57,7 @@ CARBON_CONTEXT_COLS = (
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_LLM_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+DEFAULT_LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
 DEFAULT_TOP_K = 5
 DEFAULT_SELECTED_PCF_COL = "pcf"
 PREDICTION_METHOD_TO_COLUMN = {
@@ -233,6 +234,17 @@ class SentenceTransformerEncoder:
         return embeddings.astype(np.float32, copy=False)
 
 
+class NumericLLMClient(Protocol):
+    """Minimal interface required by the retrieval pipeline."""
+
+    model: str
+
+    @property
+    def is_available(self) -> bool: ...
+
+    def predict_numeric(self, prompt: str) -> float: ...
+
+
 class OpenAILLMClient:
     """Thin OpenAI client that returns a single numeric prediction."""
 
@@ -310,6 +322,96 @@ class OpenAILLMClient:
             )
 
         text = response.choices[0].message.content or ""
+        return parse_numeric_response(text)
+
+
+def _resolve_torch_dtype(dtype_name: str) -> Any:
+    if dtype_name == "auto":
+        return "auto"
+
+    try:
+        import torch
+    except ImportError as exc:
+        raise ImportError(
+            "torch is required for the local Transformers LLM backend."
+        ) from exc
+
+    mapping = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }
+    if dtype_name not in mapping:
+        raise ValueError(
+            f"Unsupported torch dtype {dtype_name!r}. "
+            "Choose one of: auto, float16, bfloat16, float32."
+        )
+    return mapping[dtype_name]
+
+
+class TransformersLLMClient:
+    """Local HuggingFace text-generation client with the same numeric API."""
+
+    system_prompt = OpenAILLMClient.system_prompt
+
+    def __init__(
+        self,
+        model: str = DEFAULT_LOCAL_LLM_MODEL,
+        *,
+        torch_dtype: str = "auto",
+        device_map: str = "auto",
+        max_new_tokens: int = 384,
+    ) -> None:
+        self.model = model
+        self.torch_dtype = torch_dtype
+        self.device_map = device_map
+        self.max_new_tokens = max_new_tokens
+        self._pipe: Any | None = None
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    def _load_pipeline(self) -> Any:
+        if self._pipe is None:
+            try:
+                import transformers
+                from transformers import pipeline
+            except ImportError as exc:
+                raise ImportError(
+                    "transformers is required for the local LLM backend. "
+                    "Install the project requirements before running it."
+                ) from exc
+
+            transformers.logging.set_verbosity_error()
+            dtype = _resolve_torch_dtype(self.torch_dtype)
+            self._pipe = pipeline(
+                "text-generation",
+                model=self.model,
+                torch_dtype=dtype,
+                device_map=self.device_map,
+            )
+
+            generation_config = self._pipe.model.generation_config
+            if getattr(generation_config, "max_length", None) is not None:
+                generation_config.max_length = None
+            if self._pipe.tokenizer.pad_token_id is None:
+                self._pipe.tokenizer.pad_token_id = self._pipe.tokenizer.eos_token_id
+
+        return self._pipe
+
+    def predict_numeric(self, prompt: str) -> float:
+        pipe = self._load_pipeline()
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+        output = pipe(
+            messages,
+            max_new_tokens=self.max_new_tokens,
+            do_sample=False,
+        )
+        text = output[0]["generated_text"][-1]["content"]
         return parse_numeric_response(text)
 
 
@@ -945,7 +1047,7 @@ class PCFRetrievalEstimator:
         *,
         method_name: str,
         title_col: str,
-        llm_client: OpenAILLMClient | None,
+        llm_client: NumericLLMClient | None,
         llm_model_name: str | None,
         cache_path: Path | None,
         limit: int | None,
@@ -1020,14 +1122,15 @@ class PCFRetrievalEstimator:
         df: pd.DataFrame,
         *,
         title_col: str,
-        llm_client: OpenAILLMClient | None,
+        llm_client: NumericLLMClient | None,
         llm_model_name: str | None,
         llm_cache_path: Path | None,
         llm_limit: int | None,
         llm_cache_only: bool,
+        methods: Sequence[str] = LLM_METHODS,
     ) -> pd.DataFrame:
         result = df.copy()
-        for method_name in LLM_METHODS:
+        for method_name in methods:
             result[PREDICTION_METHOD_TO_COLUMN[method_name]] = self._run_llm_predictions(
                 result,
                 method_name=method_name,
@@ -1045,10 +1148,11 @@ class PCFRetrievalEstimator:
         *,
         limit: int | None = None,
         random_state: int = 42,
-        llm_client: OpenAILLMClient | None = None,
+        llm_client: NumericLLMClient | None = None,
         llm_model_name: str | None = None,
         llm_cache_path: Path | None = None,
         llm_cache_only: bool = False,
+        llm_methods: Sequence[str] = LLM_METHODS,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Evaluate nearest-neighbor, zero-shot LLM, and few-shot LLM methods.
@@ -1077,6 +1181,7 @@ class PCFRetrievalEstimator:
             llm_cache_path=llm_cache_path,
             llm_limit=len(retrieved),
             llm_cache_only=llm_cache_only,
+            methods=llm_methods,
         )
         return retrieved, _build_metrics_frame(retrieved)
 
@@ -1084,11 +1189,12 @@ class PCFRetrievalEstimator:
         self,
         amazon_df: pd.DataFrame,
         *,
-        llm_client: OpenAILLMClient | None = None,
+        llm_client: NumericLLMClient | None = None,
         llm_model_name: str | None = None,
         llm_cache_path: Path | None = None,
         llm_limit: int | None = None,
         llm_cache_only: bool = False,
+        llm_methods: Sequence[str] = LLM_METHODS,
     ) -> pd.DataFrame:
         """Predict PCF for Amazon products using retrieval and optional LLMs."""
         prepared = prepare_amazon_metadata(
@@ -1111,6 +1217,7 @@ class PCFRetrievalEstimator:
             llm_cache_path=llm_cache_path,
             llm_limit=llm_limit,
             llm_cache_only=llm_cache_only,
+            methods=llm_methods,
         )
         retrieved = _select_final_pcf(retrieved)
         return retrieved[_amazon_output_columns(retrieved, self.config.top_k)].copy()
