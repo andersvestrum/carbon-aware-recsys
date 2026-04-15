@@ -12,6 +12,7 @@ In the notebook config cell, set:
 - `SAMPLE_SIZE_K` (Xk target sample size, i.e. `Xk * 1000` rows)
 - `SAMPLE_SEED = 42`
 - `NUM_SHARDS` (number of parallel runners)
+- `LLM_BACKEND` (`'transformers'` or `'vllm'`; keep one backend per run)
 - `LLM_REASONING_STYLE = 'terse'`
 - `MAX_NEW_TOKENS = 128` (or your preferred cap)
 
@@ -34,7 +35,7 @@ For each runner/tab:
 
 1. Use a unique `SHARD_ID` in `0..NUM_SHARDS-1`
 2. Set `RUN_MODE = 'test50'`
-3. Keep `SAMPLE_SIZE_K`, `SAMPLE_SEED`, and `NUM_SHARDS` identical across all tabs
+3. Keep `SAMPLE_SIZE_K`, `SAMPLE_SEED`, `NUM_SHARDS`, and `LLM_BACKEND` identical across all tabs
 4. Run the notebook **top-to-bottom** (all cells in order)
 
 Example for 4 parallel tabs:
@@ -60,7 +61,7 @@ with shard-specific files:
 
 For each parallel Colab tab/session:
 
-1. Set the same `SAMPLE_SIZE_K`, `SAMPLE_SEED`, `NUM_SHARDS`
+1. Set the same `SAMPLE_SIZE_K`, `SAMPLE_SEED`, `NUM_SHARDS`, and `LLM_BACKEND`
 2. Set unique `SHARD_ID`
 3. Set `RUN_MODE = 'sampled_shard'`
 4. Run the notebook **from the first cell to the last cell**
