@@ -5,6 +5,20 @@ This runbook explains how to execute sampled-shard few-shot prediction in parall
 - `notebooks/colab_pcf_llm_few_shot_electronics.ipynb`
 - `scripts/12_merge_sampled_shards.py`
 
+## Current backend status
+
+The notebook now supports both backends through one config flag:
+
+- `LLM_BACKEND = 'transformers'` (baseline)
+- `LLM_BACKEND = 'vllm'` (recommended for throughput on larger runs)
+
+Notes:
+
+- vLLM is installed in the setup cell as an optional dependency.
+- If vLLM install fails in a runtime, use `LLM_BACKEND = 'transformers'` for that run.
+- Keep one backend per run. Do not mix backends across shard tabs for the same run.
+- The backend is included in `RUN_TAG`, so outputs and cache files remain backend-isolated.
+
 ## 1) Configure one canonical run setup
 
 In the notebook config cell, set:
@@ -14,11 +28,11 @@ In the notebook config cell, set:
 - `NUM_SHARDS` (number of parallel runners)
 - `LLM_BACKEND` (`'transformers'` or `'vllm'`; keep one backend per run)
 - `LLM_REASONING_STYLE = 'terse'`
-- `MAX_NEW_TOKENS = 128` (or your preferred cap)
+- `MAX_NEW_TOKENS = 96` or `128` (start with `96` for speed)
 
 Keep these values identical across all shard runners.
 
-## 2) Test path (50 rows per shard runner)
+## 2) Test path (50 rows total, split across shard runners)
 
 Purpose: verify timing, logging, and output schema before larger runs.
 
@@ -37,6 +51,8 @@ For each runner/tab:
 2. Set `RUN_MODE = 'test50'`
 3. Keep `SAMPLE_SIZE_K`, `SAMPLE_SEED`, `NUM_SHARDS`, and `LLM_BACKEND` identical across all tabs
 4. Run the notebook **top-to-bottom** (all cells in order)
+
+In `test50` mode, the notebook takes the first 50 rows of each shard's workload. This means test outputs are shard-specific and not intended to represent a merged global 50-row benchmark unless you merge and inspect across shards.
 
 Example for 4 parallel tabs:
 
@@ -71,6 +87,7 @@ Important:
 - Do not start from the middle; the workload, logger, model client, and output paths
   are created by earlier cells.
 - All tabs use the same notebook; parallelism comes from different `SHARD_ID`s.
+- Reusing a tab for another shard is supported: change `SHARD_ID` (and optionally `RUN_LABEL`) and rerun from the first cell.
 
 Each runner outputs:
 
