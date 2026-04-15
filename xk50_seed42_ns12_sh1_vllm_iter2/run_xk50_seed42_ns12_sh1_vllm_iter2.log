@@ -1,0 +1,11 @@
+18:12:23  INFO  Configured run directory: /content/drive/MyDrive/carbon-aware-recsys-colab/pcf/home_and_kitchen_sampled_shards/xk50_seed42_ns12_sh1_vllm_iter2
+18:12:23  INFO  Run mode=sampled_shard | run_tag=xk50_seed42_ns12_sh1_vllm_iter2
+18:12:23  INFO  Model: Qwen/Qwen2.5-3B-Instruct | Backend: vllm | Category: home_and_kitchen
+18:12:32  INFO  Fitting Carbon Catalogue retrieval index...
+18:12:51  INFO  Carbon Catalogue fit complete. Backend=vllm
+18:12:51  INFO  Loading full home_and_kitchen metadata...
+18:17:46  INFO  Sampled rows: 50000 | shard rows: 4167
+18:17:46  INFO  Shard sample index range: [4167, 8334)
+18:17:46  INFO  RUN_MODE=sampled_shard -> skipping test50 cell (set RUN_MODE='test50' to run this cell)
+18:17:46  INFO  Starting sampled shard run with 4167 rows...
+18:48:44  INFO  Sampled shard run complete in 30.97 min
