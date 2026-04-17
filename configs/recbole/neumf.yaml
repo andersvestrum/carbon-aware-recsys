@@ -35,3 +35,4 @@ stopping_step: 10
 
 # ── Output ────────────────────────────────────────────────────────────
 show_progress: true
+use_gpu: true
