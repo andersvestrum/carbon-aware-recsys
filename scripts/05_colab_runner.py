@@ -250,14 +250,19 @@ def _ensure_interim_on_drive(layout: Layout, categories: list[str]) -> None:
         missing_paths: list[Path] = []
         for split in ["train", "val", "test"]:
             for category in categories:
-                drive_path = layout.drive_interim_dir / split / f"{category}.csv"
-                if drive_path.exists():
+                drive_gz = layout.drive_interim_dir / split / f"{category}.csv.gz"
+                drive_csv = layout.drive_interim_dir / split / f"{category}.csv"
+                if drive_gz.exists() or drive_csv.exists():
                     continue
-                repo_path = layout.repo_root / "data" / "interim" / split / f"{category}.csv"
-                if _copy_if_missing(repo_path, drive_path):
-                    log.info("Bootstrapped interim split → %s", drive_path)
+                repo_gz = layout.repo_root / "data" / "interim" / split / f"{category}.csv.gz"
+                repo_csv = layout.repo_root / "data" / "interim" / split / f"{category}.csv"
+                if _copy_if_missing(repo_gz, drive_gz):
+                    log.info("Bootstrapped interim split → %s", drive_gz)
                     continue
-                missing_paths.append(drive_path)
+                if _copy_if_missing(repo_csv, drive_csv):
+                    log.info("Bootstrapped interim split → %s", drive_csv)
+                    continue
+                missing_paths.append(drive_gz)
         return missing_paths
 
     missing = _copy_missing_to_drive()
@@ -385,10 +390,16 @@ def _write_manifest(args: argparse.Namespace, layout: Layout) -> dict[str, Any]:
 
 def _copy_category_inputs_to_scratch(layout: Layout, category: str) -> None:
     for split in ["train", "val", "test"]:
-        src = layout.drive_interim_dir / split / f"{category}.csv"
-        if not src.exists():
-            raise FileNotFoundError(f"Missing Drive interim file: {src}")
-        dst = layout.scratch_interim_dir / split / f"{category}.csv"
+        src_gz = layout.drive_interim_dir / split / f"{category}.csv.gz"
+        src_csv = layout.drive_interim_dir / split / f"{category}.csv"
+        if src_gz.exists():
+            src = src_gz
+            dst = layout.scratch_interim_dir / split / f"{category}.csv.gz"
+        elif src_csv.exists():
+            src = src_csv
+            dst = layout.scratch_interim_dir / split / f"{category}.csv"
+        else:
+            raise FileNotFoundError(f"Missing Drive interim file: {src_gz} or {src_csv}")
         _copy_atomic(src, dst)
 
     if layout.scratch_carbon_dir.exists():
