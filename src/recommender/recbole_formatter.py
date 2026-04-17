@@ -73,9 +73,18 @@ def _concat_interim_splits(
 
     frames = []
     for split in splits:
-        path = Path(interim_dir) / split / f"{category}.csv"
-        if not path.exists():
-            log.warning("Missing interim file: %s — skipping", path)
+        split_dir = Path(interim_dir) / split
+        path = None
+        for suffix in (".csv.gz", ".csv"):
+            candidate = split_dir / f"{category}{suffix}"
+            if candidate.exists():
+                path = candidate
+                break
+        if path is None:
+            log.warning(
+                "Missing interim file: %s — skipping",
+                split_dir / f"{category}.csv",
+            )
             continue
         df = pd.read_csv(path)
         df["split"] = split
