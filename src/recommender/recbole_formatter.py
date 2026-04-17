@@ -41,12 +41,15 @@ def load_interim_split(
     if interim_dir is None:
         interim_dir = INTERIM_DIR
 
-    path = Path(interim_dir) / split / f"{category}.csv"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Missing interim file for category='{category}', split='{split}': {path}"
-        )
-    return pd.read_csv(path)
+    split_dir = Path(interim_dir) / split
+    for suffix in (".csv.gz", ".csv"):
+        candidate = split_dir / f"{category}{suffix}"
+        if candidate.exists():
+            return pd.read_csv(candidate)
+    raise FileNotFoundError(
+        f"Missing interim file for category='{category}', split='{split}': "
+        f"{split_dir / (category + '.csv')} or {split_dir / (category + '.csv.gz')}"
+    )
 
 
 def _concat_interim_splits(

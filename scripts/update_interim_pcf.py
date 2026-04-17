@@ -26,7 +26,7 @@ def main() -> None:
     for split in SPLITS:
         for category in CATEGORIES:
             raw_path = RAW_DIR / split / f"{category}.csv"
-            out_path = INTERIM_DIR / split / f"{category}.csv"
+            out_path = INTERIM_DIR / split / f"{category}.csv.gz"
 
             df = pd.read_csv(raw_path, compression="gzip", low_memory=False)
             before = len(df)
@@ -35,7 +35,7 @@ def main() -> None:
             df = df.merge(pcf[["parent_asin", "pcf", "main_category"]], on="parent_asin", how="left")
 
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(out_path, index=False)
+            df.to_csv(out_path, index=False, compression="gzip")
 
             print(
                 f"  {split}/{category}: {before:,} -> {len(df):,} rows "
