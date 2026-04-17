@@ -54,11 +54,24 @@ def _resolve_category_column(df: pd.DataFrame) -> str | None:
     return None
 
 
-def _resolve_pcf_column(df: pd.DataFrame) -> str:
-    for col in ["pcf", "few_shot_llm_pcf", "zero_shot_llm_pcf", "neighbor_average_pcf"]:
-        if col in df.columns:
-            return col
-    raise ValueError("No PCF column found. Expected one of: pcf, few_shot_llm_pcf, zero_shot_llm_pcf, neighbor_average_pcf")
+def _ensure_predicted_pcf_column(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    """
+    Column used for plots should reflect *predicted* PCF (downstream signal), not
+    ground-truth `pcf` in Carbon Catalogue evaluation files.
+    """
+    out = df.copy()
+    if "few_shot_llm_pcf" in out.columns and "neighbor_average_pcf" in out.columns:
+        out["_plot_predicted_pcf"] = out["few_shot_llm_pcf"].where(
+            out["few_shot_llm_pcf"].notna(),
+            out["neighbor_average_pcf"],
+        )
+        return out, "_plot_predicted_pcf"
+    if "pcf" in out.columns and "few_shot_llm_pcf" not in out.columns:
+        return out, "pcf"
+    for col in ("few_shot_llm_pcf", "neighbor_average_pcf", "zero_shot_llm_pcf"):
+        if col in out.columns:
+            return out, col
+    raise ValueError("Could not resolve a predicted-PCF column for plotting.")
 
 
 def plot_least_green_categories(
@@ -235,7 +248,7 @@ def main() -> None:
     _set_plot_style(args.paper_style)
     df = pd.read_csv(args.predictions_path)
 
-    pcf_col = _resolve_pcf_column(df)
+    df, pcf_col = _ensure_predicted_pcf_column(df)
     category_col = _resolve_category_column(df)
     if category_col is None:
         raise ValueError(

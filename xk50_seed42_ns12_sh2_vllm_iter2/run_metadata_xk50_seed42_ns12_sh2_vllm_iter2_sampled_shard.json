@@ -1,0 +1,29 @@
+{
+  "run_type": "sampled_shard",
+  "run_mode": "sampled_shard",
+  "run_tag": "xk50_seed42_ns12_sh2_vllm_iter2",
+  "category": "home_and_kitchen",
+  "llm_model": "Qwen/Qwen2.5-3B-Instruct",
+  "llm_backend": "vllm",
+  "llm_methods": [
+    "few_shot_llm"
+  ],
+  "llm_reasoning_style": "terse",
+  "max_new_tokens": 96,
+  "rows": 4167,
+  "seed": 42,
+  "top_k_neighbors": 5,
+  "elapsed_minutes": 28.959,
+  "sample_size_requested": 50000,
+  "sample_rows": 50000,
+  "sample_seed": 42,
+  "num_shards": 12,
+  "shard_id": 2,
+  "shard_rows": 4167,
+  "shard_sample_pos_start": 8334,
+  "shard_sample_pos_end_exclusive": 12501,
+  "output_predictions_csv": "/content/drive/MyDrive/carbon-aware-recsys-colab/pcf/home_and_kitchen_sampled_shards/xk50_seed42_ns12_sh2_vllm_iter2/predictions_xk50_seed42_ns12_sh2_vllm_iter2_sampled_shard.csv",
+  "output_jsonl": "/content/drive/MyDrive/carbon-aware-recsys-colab/pcf/home_and_kitchen_sampled_shards/xk50_seed42_ns12_sh2_vllm_iter2/predictions_xk50_seed42_ns12_sh2_vllm_iter2_sampled_shard.jsonl",
+  "run_log": "/content/drive/MyDrive/carbon-aware-recsys-colab/pcf/home_and_kitchen_sampled_shards/xk50_seed42_ns12_sh2_vllm_iter2/run_xk50_seed42_ns12_sh2_vllm_iter2.log",
+  "llm_cache": "/content/drive/MyDrive/carbon-aware-recsys-colab/pcf/home_and_kitchen_sampled_shards/xk50_seed42_ns12_sh2_vllm_iter2/llm_cache_xk50_seed42_ns12_sh2_vllm_iter2.jsonl"
+}
