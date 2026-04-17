@@ -20,6 +20,12 @@ python3 -m venv .venv
 
 This repository keeps the methodology as explicit stepwise scripts.
 
+### Tracked vs ignored outputs
+
+`.gitignore` excludes large or regenerable paths: `data/raw/`, `data/interim/`, `data/processed/`, `output/results/`, and `output/models/`. **`output/pcf/`** and **`output/figures/`** are not ignored, so PCF evaluation CSVs and figure PNGs can live in the repo and travel with a clone. The Amazon prediction cache at `data/processed/carbon/amazon_pcf_predictions.csv` is still ignored, so a paper-faithful rerun must regenerate or restore that file before preprocessing.
+
+For a full end-to-end checklist (including optional paths for `predict_carbon.py` and PCF post-processing), see [docs/FINAL_RUN.md](docs/FINAL_RUN.md).
+
 ## Colab GPU Workflow
 
 For the fastest Colab setup, use:
@@ -47,22 +53,44 @@ Run the retrieval-only PCF pipeline:
 ./.venv/bin/python scripts/predict_carbon.py --device cpu --num-threads 8 --skip-llm
 ```
 
-Run the 100-example LLM evaluation slice used in the paper draft:
+Run the paper-faithful local-Qwen pipeline for the full Carbon Catalogue
+holdout and the full Amazon metadata set:
 
 ```bash
-OPENAI_API_KEY=... ./.venv/bin/python scripts/predict_carbon.py \
+./.venv/bin/python scripts/predict_carbon.py \
   --device cpu \
   --num-threads 8 \
-  --evaluation-limit 100 \
-  --amazon-limit 0
+  --llm-backend transformers \
+  --llm-model Qwen/Qwen2.5-3B-Instruct \
+  --transformers-device-map auto \
+  --transformers-torch-dtype float16 \
+  --evaluation-limit -1 \
+  --llm-amazon-limit -1 \
+  --eval-output output/pcf/pcf_evaluation_predictions.csv \
+  --metrics-output output/pcf/pcf_evaluation_metrics.csv \
+  --run-metadata-output output/pcf/pcf_run_metadata.json \
+  --amazon-output data/processed/carbon/amazon_pcf_predictions.csv
 ```
 
-Outputs:
+This full-Amazon Qwen pass is intended for a GPU machine (for example
+Colab T4). The same command on CPU will be impractically slow.
+
+To reduce wall-clock time, the recommended paper-faithful path is to keep the
+Carbon Catalogue evaluation as one run and shard the Amazon few-shot pass by
+category (`electronics`, `home_and_kitchen`, `sports_and_outdoors`) across
+multiple GPU workers. The repo now supports this directly via
+`--amazon-categories`, `--amazon-llm-methods few_shot_llm`, and
+[scripts/11_merge_amazon_pcf_shards.py](scripts/11_merge_amazon_pcf_shards.py).
+See [docs/FINAL_RUN.md](docs/FINAL_RUN.md) for the exact commands.
+
+Outputs (defaults; override with `--eval-output` / `--metrics-output` / `--amazon-output`):
 
 - `data/processed/carbon/amazon_pcf_predictions.csv`
 - `output/results/carbon/pcf_evaluation_predictions.csv`
 - `output/results/carbon/pcf_evaluation_metrics.csv`
 - `output/results/carbon/pcf_run_metadata.json`
+
+The [final run guide](docs/FINAL_RUN.md) recommends writing evaluation CSVs under **`output/pcf/`** when you want them versioned alongside PCF figures (see *Tracked vs ignored outputs* above). `output/results/` remains gitignored.
 
 ### 2. Train candidate generators
 
@@ -85,7 +113,7 @@ Outputs:
 ./.venv/bin/python scripts/02_rerank.py --category electronics --model BPR
 ```
 
-The default sweep is defined in [configs/reranking/default.yaml](configs/reranking/default.yaml) and matches the paper: 16 `lambda` values, top-10 re-ranked lists, and a top-100 candidate pool from RecBole.
+The default sweep is defined in [configs/reranking/default.yaml](configs/reranking/default.yaml) and matches the current paper/reporting setup: a denser `lambda` tail from `0.90` to `1.00`, top-10 re-ranked lists, and a top-100 candidate pool from RecBole.
 
 Outputs:
 
@@ -111,12 +139,18 @@ Outputs:
 After running the category/model evaluations you want to include, generate the paper figures referenced from `docs/main.tex`:
 
 ```bash
-./.venv/bin/python scripts/04_generate_paper_plots.py
+./.venv/bin/python scripts/04_generate_paper_plots.py \
+  --results-dir output/results \
+  --figure-dir output/figures \
+  --summary-output-dir output/results \
+  --carbon-metrics-path output/pcf/pcf_evaluation_metrics.csv \
+  --carbon-eval-predictions-path output/pcf/pcf_evaluation_predictions.csv \
+  --amazon-predictions-path data/processed/carbon/amazon_pcf_predictions.csv
 ```
 
 Outputs:
 
-- `docs/*.png` paper figures
+- `output/figures/*.png` paper figures
 - `output/results/paper_plot_manifest.json`
 - `output/results/paper_metrics_summary.csv`
 

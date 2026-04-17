@@ -459,7 +459,10 @@ neighbour-average estimate. For each Amazon catalog item, we embed its
 title, retrieve the five nearest Carbon Catalogue neighbours, and retain
 the resulting product-level estimate $\mathrm{PCF}_i$; items with
 insufficient metadata for embedding are excluded from downstream
-analysis.
+analysis. In the reported run, the full Amazon catalog is scored
+with the local \texttt{Qwen/Qwen2.5-3B-Instruct} few-shot pipeline, so the
+selected PCF column is intended to be driven by local Qwen predictions
+rather than by the neighbour-only fallback.
 
 
 
@@ -512,7 +515,7 @@ We evaluate the proposed framework on the Amazon Reviews dataset as a large-scal
 
 \subsection{Experimental Setup}
 
-We follow the pipeline described in Section~4. For each product category, we train candidate generation models using the timestamp-based train/validation/test split and then apply carbon-aware re-ranking directly on the resulting relevance scores. Unless otherwise stated, all evaluation is performed on top-10 recommendation lists, and $\lambda$ is swept over a grid of 16 values spanning $[0, 1]$, with finer spacing in the low-$\lambda$ region (steps of 0.025 for $\lambda \leq 0.1$, coarser steps of 0.1 thereafter up to $\lambda = 1$).
+We follow the pipeline described in Section~4. For each product category, we train candidate generation models using the timestamp-based train/validation/test split and then apply carbon-aware re-ranking directly on the resulting relevance scores. Unless otherwise stated, all evaluation is performed on top-10 recommendation lists, and $\lambda$ is swept over a dense grid spanning $[0, 1]$, with finer spacing in the low-$\lambda$ region (steps of 0.025 for $\lambda \leq 0.1$), coarser steps through $\lambda=0.8$, and an explicit tail from $\lambda=0.90$ to $\lambda=1.00$ in steps of 0.01.
 
 \subsection{Candidate Generation Baselines}
 
@@ -568,27 +571,29 @@ clamped before evaluation. We report RMSE, MAE, median absolute error,
 and Spearman rank correlation. To keep the benchmark aligned with the
 consumer-product setting studied downstream, we treat the
 \emph{consumer-scale} subset with true PCF $\leq 10{,}000$~kg CO$_2$e as
-the primary evaluation set, while retaining the full 866-item holdout as
-a robustness check. We also evaluate the \emph{selected} PCF signal used
-in the repository implementation, which applies the few-shot estimate
-when available and otherwise falls back to neighbour average.
+the primary scope, and we report metrics on the \emph{intersection} of
+that subset with items where \emph{all} base estimators returned a valid
+prediction ($n=771$), so every method is evaluated on the same rows. The
+full 866-item holdout remains a robustness check. The downstream pipeline uses \emph{selected} PCF (few-shot when
+available, otherwise neighbour average); on this intersection subset,
+few-shot is available for every item, so selected PCF is identical to
+few-shot LLM.
 
 \begin{table}[H]
 \centering
 \small
 \begin{tabular}{lrrrrr}
 \hline
-Method & $n$ & RMSE & MAE & Median AE & Spearman $\rho$ \\
+Method & RMSE & MAE & Median AE & Spearman $\rho$ \\
 \hline
-Neighbour average & 774 & 3,006.6 & 965.0 & 123.3 & \textbf{0.728} \\
-Zero-shot LLM & 774 & 1,742.0 & 799.7 & 93.1 & 0.070 \\
-Few-shot LLM & 771 & \textbf{1,708.6} & \textbf{695.1} & \textbf{58.6} & 0.518 \\
-Selected PCF & 774 & 1,723.4 & 701.8 & 58.6 & 0.515 \\
+Neighbour average & 3{,}002.0 & 959.4 & 123.3 & \textbf{0.728} \\
+Zero-shot LLM & 1{,}712.8 & 790.7 & 93.2 & 0.064 \\
+Few-shot LLM & \textbf{1{,}708.6} & \textbf{695.1} & \textbf{58.6} & 0.518 \\
 \hline
 \end{tabular}
-\caption{PCF estimation on the consumer-scale hold-out subset
-($\mathrm{PCF}_{\mathrm{true}} \leq 10{,}000$~kg CO$_2$e$)$ from the
-Carbon Catalogue. Lower RMSE, MAE, and median absolute error are better;
+\caption{PCF estimation on the consumer-scale hold-out intersection
+($\mathrm{PCF}_{\mathrm{true}} \leq 10{,}000$~kg CO$_2$e, all methods
+valid; $n=771$). Lower RMSE, MAE, and median absolute error are better;
 higher Spearman $\rho$ is better.}
 \label{tab:pcf}
 \end{table}
@@ -622,36 +627,29 @@ higher Spearman $\rho$ is better.}
     extreme industrial products, whereas the consumer-scale subset is
     better aligned with the Amazon recommendation setting studied
     downstream.}
-  \label{fig:pcf-bar}
+  \label{fig:pcf-subset-accuracy}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{pcf_distribution_paper}
-    \caption{Overall predicted PCF distribution on the Amazon catalog.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{pcf_boxplot_by_category_paper}
-    \caption{Predicted PCF distribution by Carbon Catalogue category.}
-  \end{subfigure}
-  \caption{Distribution of predicted PCF values used by the downstream
-    re-ranker. The Amazon-side predictions are concentrated in a
-    consumer-scale range, while the Carbon Catalogue categories still show
-    large between-sector variation and heavy tails.}
-  \label{fig:pcf-scatter}
+  \includegraphics[width=0.92\textwidth]{carbon_catalogue_pcf_by_sector_paper}
+  \caption{Distribution of predicted PCF (few-shot when available, otherwise
+    neighbour average) across Carbon Catalogue sectors used in PCF estimation
+    diagnostics. Sectors span a wide range, including a heavy industrial
+    tail that drives large errors on the full 866-item holdout relative to
+    the consumer-scale benchmark in Table~\ref{tab:pcf}.}
+  \label{fig:pcf-downstream-dist}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{least_green_categories}
+  \includegraphics[width=0.82\textwidth]{least_green_categories_paper}
   \caption{Highest-average-PCF categories in the Carbon Catalogue based on
     the predicted values. A few heavy industrial sectors dominate the
     extreme tail, which is precisely why full-holdout RMSE paints a much
     harsher picture of LLM-based estimation than the consumer-scale subset
     used as the main benchmark.}
-  \label{fig:pcf-dist}
+  \label{fig:pcf-sector-tail}
 \end{figure}
 
 \paragraph{Findings.}
@@ -659,10 +657,10 @@ On the consumer-scale subset, the few-shot LLM is the strongest standalone
 estimator on absolute-error metrics, achieving the lowest RMSE
 (1{,}708.6), MAE (695.1), and median absolute error (58.6), while the
 neighbour-average baseline remains best on rank preservation
-($\rho=0.728$). The \emph{selected} PCF signal used in the repository
-implementation nearly matches the few-shot model on RMSE, MAE, and median
-absolute error while preserving full coverage, making it the most faithful
-summary of the signal actually used in the recommendation experiments.
+($\rho=0.728$). On the intersection benchmark in Table~\ref{tab:pcf}, the repository's
+\emph{selected} PCF (few-shot when available, otherwise neighbour average)
+coincides with few-shot LLM because few-shot is available for every row in
+that subset.
 
 The full 866-item holdout tells a different story: there, the
 neighbour-average baseline remains best on RMSE, MAE, and Spearman, while
@@ -673,10 +671,10 @@ consumer-oriented clamp applied to the zero-shot and few-shot prompts.
 Those outliers dominate full-holdout RMSE and make the raw aggregate table
 less representative of downstream e-commerce performance. We therefore
 use the consumer-scale subset as the main benchmark in the paper, while
-retaining the full-holdout view as a robustness check. Figures~\ref{fig:pcf-scatter}
-and~\ref{fig:pcf-dist} further show that the downstream Amazon catalog
-mostly occupies a consumer-scale regime even though the source Carbon
-Catalogue still contains a heavy industrial tail.
+retaining the full-holdout view as a robustness check. Figures~\ref{fig:pcf-downstream-dist}
+and~\ref{fig:pcf-sector-tail} illustrate how sector structure in the Carbon
+Catalogue concentrates much of that heavy tail in a handful of industrial
+categories.
 
 The chosen estimator is applied to the full Amazon catalog to assign
 $\mathrm{PCF}_i$ to each product; items with insufficient metadata are
@@ -1135,7 +1133,8 @@ Parameter & Value \\
 Candidate pool size from RecBole & 100 \\
 Final re-ranked list size & 10 \\
 $\lambda$ grid & 0.0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25, \\
-               & 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0 \\
+               & 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.91, 0.92, \\
+               & 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0 \\
 Engagement normalisation & Per-user min-max to $[0,1]$ \\
 Carbon normalisation     & Global min-max to $[0,1]$ \\
 User scoring batch size  & 1{,}024 \\
