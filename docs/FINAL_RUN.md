@@ -160,6 +160,56 @@ cache is append-only and should not be shared between concurrent writers.
 evaluation CSVs under `output/pcf/shards/` are just throwaway bookkeeping so
 each worker writes to separate files.
 
+### Colab sampled-shard CF-eligible v2 run (24k/category)
+
+Use this flow when you want category-scoped few-shot runs that are guaranteed to be CF-eligible before downstream training/reranking.
+
+1) For each category (`electronics`, `home_and_kitchen`, `sports_and_outdoors`), run the three shard notebooks in parallel:
+
+- `notebooks/colab_pcf_llm_few_shot_<category>_00.ipynb`
+- `notebooks/colab_pcf_llm_few_shot_<category>_01.ipynb`
+- `notebooks/colab_pcf_llm_few_shot_<category>_02.ipynb`
+
+These notebooks now enforce:
+
+- fixed `TARGET_SAMPLE_SIZE = 24_000`
+- fixed `NUM_SHARDS = 3`
+- fixed shard IDs from notebook filename
+- strict CF-eligibility gating (`parent_asin` must exist in interaction train/val/test universe)
+- fail-fast behavior if a category has fewer than 24,000 eligible products
+
+2) Merge per-category shard outputs (note recursive glob for nested run_tag folders):
+
+```bash
+./.venv/bin/python scripts/12_merge_sampled_shards.py \
+  --input-dir "/path/to/electronics_sampled_shards_v2_cf_eligible" \
+  --glob "**/predictions_*_sampled_shard.csv" \
+  --output "/path/to/electronics_sampled_shards_v2_cf_eligible/predictions_electronics_xk24_ns3_v2_cf_eligible_merged.csv"
+```
+
+Repeat for `home_and_kitchen` and `sports_and_outdoors`.
+
+3) Validate each merged category file before downstream use:
+
+```bash
+./.venv/bin/python - <<'PY'
+import pandas as pd
+
+path = "/path/to/merged_category.csv"
+df = pd.read_csv(path)
+assert len(df) == 24000, f"Expected 24000 rows, got {len(df)}"
+assert df["parent_asin"].nunique(dropna=True) == 24000, "parent_asin must be unique"
+print("rows:", len(df))
+print("unique_parent_asin:", df["parent_asin"].nunique(dropna=True))
+PY
+```
+
+Also check shard run metadata JSON files for:
+
+- `sample_size_required = 24000`
+- `num_shards_required = 3`
+- `output_parent_asin_in_interactions = true`
+
 ## 2. PCF metrics and figures (from row-level predictions)
 
 Skip this block if the repo already contains fresh `output/pcf/pcf_evaluation_metrics_by_subset.csv` and the PNGs under `output/figures/pcf_insights/` and `output/figures/pcf_subset_eval/`.
