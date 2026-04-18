@@ -1,0 +1,32 @@
+{
+  "figures": [
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_electronics_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_electronics_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_electronics_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_electronics_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_electronics_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_electronics_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_home_and_kitchen_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_home_and_kitchen_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_home_and_kitchen_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_home_and_kitchen_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_home_and_kitchen_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_home_and_kitchen_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_sports_and_outdoors_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_sports_and_outdoors_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_sports_and_outdoors_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_sports_and_outdoors_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/lambda_sensitivity_sports_and_outdoors_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/pareto_sports_and_outdoors_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/multimodel_pareto_electronics.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/multimodel_pareto_home_and_kitchen.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/multimodel_pareto_sports_and_outdoors.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/cross_category_pareto_BPR.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/cross_category_pareto_NeuMF.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/cross_category_pareto_LightGCN.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/best_pareto_summary_bar.png",
+    "/content/drive/MyDrive/carbon-aware-recsys-colab/figures/carbon_reduction_heatmap.png"
+  ],
+  "summary_csv": "/content/drive/MyDrive/carbon-aware-recsys-colab/results/paper_reranking_summary.csv",
+  "best_points_csv": "/content/drive/MyDrive/carbon-aware-recsys-colab/results/paper_best_pareto_points.csv"
+}
