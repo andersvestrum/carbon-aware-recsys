@@ -199,7 +199,7 @@ user and item interactions~\cite{amazon2023}, focusing on three representative p
 categories: \textit{Home and Kitchen}, \textit{Sports and Outdoors}, and
 \textit{Electronics}. Reviews serve as implicit signals of user engagement or purchase
 behavior and are widely used in recommender-system research due to their scale and rich
-product metadata~\cite{amazon2015, amazon2023, vicenti2026pcfllm}. While such
+product metadata~\cite{amazon2015, amazon2023, vicenti2026pcfllm, ecoa2026}. While such
 observational data introduces well-known biases (including self-selection and exposure
 bias), it enables controlled offline analysis of recommendation strategies at catalog scale.
 
@@ -425,16 +425,6 @@ number, no scientific notation); parsed values are clamped to a plausible range 
 evaluation. This tests whether parametric world knowledge encoded during pre-training is
 sufficient for numeric carbon estimation, without any grounding in labeled product examples.
 
-\begin{wrapfigure}{r}{0.50\textwidth}
-  \vspace{-0.6cm}
-  \centering
-  \scalebox{0.36}{\input{llm_prompt}}
-  \caption{\small Few-shot LLM prompt template for PCF estimation.
-    The five nearest Carbon Catalogue neighbours in embedding space
-    serve as labelled few-shot context, ranked by cosine similarity.}
-  \label{fig:llm-prompt}
-  \vspace{-0.5cm}
-\end{wrapfigure}
 
 
 \paragraph{Few-shot retrieval-augmented LLM.}
@@ -442,8 +432,8 @@ Our primary estimator combines semantic retrieval with few-shot
 prompting~\cite{brown2020gpt3}. For each query product, we embed its title using
 \texttt{all-MiniLM-L6-v2}~\cite{reimers2019sbert} and retrieve its five nearest Carbon
 Catalogue neighbours by cosine similarity. These neighbours are assembled into a structured
-prompt in which they serve as labelled in-context examples, as illustrated in
-Figure~\ref{fig:llm-prompt}. The model is instructed to reason step by step before
+prompt in which they serve as labelled in-context examples; the full prompt template is provided in
+Figure~\ref{fig:llm-prompt-appendix} in the appendix. The model is instructed to reason step by step before
 producing a final PCF estimate~\cite{wei2022cot}, following the retrieval-augmented
 estimation strategy of Vicenti et al.~\cite{vicenti2026pcfllm}.
 
@@ -609,9 +599,8 @@ correlation. To keep the benchmark aligned with the consumer-product setting stu
 downstream, we treat the \emph{consumer-scale} subset with true PCF $\leq
 10{,}000$~kg CO$_2$e as the primary scope, and we report metrics on the
 \emph{intersection} of that subset with items where \emph{all} base estimators returned a
-valid prediction ($n=771$), so every method is evaluated on the same rows. The full
-866-item holdout remains a robustness check. The downstream pipeline uses 
-few-shot LLM for predicting PCF.
+valid prediction ($n=771$), so every method is evaluated on the same rows. The downstream
+pipeline uses few-shot LLM for predicting PCF.
 
 \begin{table}[H]
 \centering
@@ -632,95 +621,31 @@ higher Spearman $\rho$ is better.}
 \label{tab:pcf}
 \end{table}
 
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{pcf_subset_rmse}
-    \caption{RMSE.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{pcf_subset_mae}
-    \caption{MAE.}
-  \end{subfigure}
+On the consumer-scale benchmark, the few-shot LLM is the strongest estimator on absolute
+error, achieving the lowest RMSE, MAE, and median absolute error. Because the downstream
+re-ranker depends on reasonably calibrated absolute PCF values rather than ranking alone,
+we use few-shot LLM as the main PCF signal. The neighbour-average baseline remains best on
+rank preservation ($\rho=0.728$), indicating that retrieval alone captures useful local
+ordering even when its absolute values are less accurate.
 
-  \vspace{0.3cm}
-
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{pcf_subset_median_ae}
-    \caption{Median absolute error.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{pcf_subset_spearman}
-    \caption{Spearman rank correlation.}
-  \end{subfigure}
-  \caption{PCF estimation accuracy on the full 866-item holdout and the
-    consumer-scale subset ($\mathrm{PCF}_{\mathrm{true}} \leq 10{,}000$).
-    The full-holdout error metrics are dominated by a small number of
-    extreme industrial products, whereas the consumer-scale subset is
-    better aligned with the Amazon recommendation setting studied
-    downstream.}
-  \label{fig:pcf-subset-accuracy}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.92\textwidth]{carbon_catalogue_pcf_by_sector_paper}
-  \caption{Distribution of predicted PCF (few-shot) across Carbon Catalogue sectors used in PCF estimation
-    diagnostics. Sectors span a wide range, including a heavy industrial
-    tail that drives large errors on the full 866-item holdout relative to
-    the consumer-scale benchmark in Table~\ref{tab:pcf}.}
-  \label{fig:pcf-downstream-dist}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\textwidth]{least_green_categories_paper}
-  \caption{Highest-average-PCF categories in the Carbon Catalogue based on
-    the predicted values. A few heavy industrial sectors dominate the
-    extreme tail, which is precisely why full-holdout RMSE paints a much
-    harsher picture of LLM-based estimation than the consumer-scale subset
-    used as the main benchmark.}
-  \label{fig:pcf-sector-tail}
-\end{figure}
-
-
-\paragraph{Findings.}
-On the consumer-scale subset, the few-shot LLM is the strongest standalone estimator on
-absolute-error metrics, achieving the lowest RMSE (1{,}708.6), MAE (695.1), and median
-absolute error (58.6), and we therefore adopt it as our primary PCF estimator. This choice
-is motivated by the downstream re-ranking objective, which depends on well-calibrated
-absolute PCF values. The neighbour-average baseline remains best on rank preservation
-($\rho=0.728$), as it inherits the local ordering structure of the embedding space and
-thus preserves relative similarities even when absolute values are biased. On the
-intersection benchmark in Table~\ref{tab:pcf}, the repository's \emph{selected} PCF
-coincides with few-shot LLM.
-
-The full 866-item holdout tells a different story: there, the neighbour-average baseline
-remains best on RMSE, MAE, and Spearman, while the LLM-based estimators are heavily
-penalized by a small number of extreme industrial products. In the current split, 92 of the
-866 held-out items have true PCF above 10{,}000~kg CO$_2$e, which lies beyond the
-consumer-oriented clamp applied to the zero-shot and few-shot prompts. Those outliers
-dominate full-holdout RMSE and make the raw aggregate table less representative of
-downstream e-commerce performance. We therefore use the consumer-scale subset as the main
-benchmark, while retaining the full-holdout view as a robustness check.
-Figures~\ref{fig:pcf-downstream-dist} and~\ref{fig:pcf-sector-tail} illustrate how sector
-structure in the Carbon Catalogue concentrates much of that heavy tail in a handful of
-industrial categories.
-
-The chosen estimator is applied to the full Amazon catalog to assign $\mathrm{PCF}_i$ to
-each product; items with insufficient metadata are excluded from downstream analysis.
+The full 866-item holdout remains a robustness check. There, the neighbour-average
+baseline performs best because a small number of heavy industrial products dominate the
+error metrics: 92 held-out items have true PCF above 10{,}000~kg CO$_2$e, beyond the
+consumer-oriented clamp used in the LLM prompts. The appendix diagnostics
+(Figures~\ref{fig:pcf-subset-accuracy}--\ref{fig:pcf-sector-tail}) show that this heavy
+tail is concentrated in a few sectors and is not representative of the downstream Amazon
+recommendation regime.
 
 %-----------------------------------------------------------------------
-\subsection{$\lambda$-Sensitivity Analysis}
+\subsection{Main Trade-off Pattern}
 \label{sec:lambda-results}
 %-----------------------------------------------------------------------
 
-We examine how NDCG@10 and AvgPCF@10 evolve as $\lambda$ increases, holding category and
-model fixed.
+We first examine how NDCG@10 and AvgPCF@10 evolve as $\lambda$ increases. Figure~\ref{fig:lambda-electronics}
+shows Electronics as a representative example; the corresponding Home \& Kitchen and Sports
+\& Outdoors curves are provided in the appendix (Figures~\ref{fig:lambda-home}
+and~\ref{fig:lambda-sports}).
 
-% ---- Figures 4-6: lambda sensitivity, one per category (3-panel each) --
 \begin{figure}[H]
   \centering
   \begin{subfigure}[t]{0.32\textwidth}
@@ -744,174 +669,32 @@ model fixed.
   \label{fig:lambda-electronics}
 \end{figure}
 
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{lambda_sensitivity_home_and_kitchen_BPR}
-    \caption{BPR.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{lambda_sensitivity_home_and_kitchen_LightGCN}
-    \caption{LightGCN.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{lambda_sensitivity_home_and_kitchen_NeuMF}
-    \caption{NeuMF.}
-  \end{subfigure}
-  \caption{$\lambda$ sensitivity for the Home and Kitchen category, shown
-    in the same format as Figure~\ref{fig:lambda-electronics}.}
-  \label{fig:lambda-home}
-\end{figure}
+The dominant pattern is a plateau followed by a cliff. For BPR and LightGCN, NDCG@10
+remains nearly flat through most of the $\lambda$ grid while AvgPCF@10 falls steadily,
+and the sharp engagement drop appears only near the carbon-only regime. Within a 5\%
+NDCG loss budget, these two models deliver roughly 70--86\% carbon reduction across the
+three categories.
 
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{lambda_sensitivity_sports_and_outdoors_BPR}
-    \caption{BPR.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{lambda_sensitivity_sports_and_outdoors_LightGCN}
-    \caption{LightGCN.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{lambda_sensitivity_sports_and_outdoors_NeuMF}
-    \caption{NeuMF.}
-  \end{subfigure}
-  \caption{$\lambda$ sensitivity for the Sports and Outdoors category,
-    shown in the same format as Figure~\ref{fig:lambda-electronics}.}
-  \label{fig:lambda-sports}
-\end{figure}
-
-\paragraph{Findings.}
-A plateau then cliff pattern is visible in most model and category combinations, but the
-location of the cliff varies considerably by model. For BPR and LightGCN the engagement
-cliff is very late ($\lambda \approx 0.91$--$0.94$ in Electronics and Home,
-$0.8$--$0.9$ in Sports), meaning NDCG@10 remains nearly flat while AvgPCF@10 falls
-throughout almost the entire $\lambda$ grid. Under a 5\% NDCG loss budget, BPR achieves
-86.3\%, 84.1\%, and 69.7\% carbon reduction in Electronics, Home \& Kitchen, and Sports
-\& Outdoors respectively; LightGCN achieves 79.5\%, 83.7\%, and 74.4\%.
-
-NeuMF is the exception. Its higher baseline engagement (NDCG@10 of 0.0618 in Electronics)
-produces a peaked score distribution that re-ranking disrupts more readily: the cliff
-arrives at $\lambda=0.3$ in Electronics (only 7.6\% reduction within the 5\% NDCG budget)
-and at $\lambda=0.5$ in Sports \& Outdoors (43.8\%). Home \& Kitchen is the outlier,
-NeuMF there actually \emph{gains} NDCG@10 at moderate $\lambda$ (cliff at $\lambda=0.96$),
-reaching 81.1\% carbon reduction within budget. This suggests that in Home \& Kitchen the
-re-ranker serendipitously elevates items that are both lower-carbon and higher-relevance,
-consistent with the lower baseline AvgPCF@10 (106.7 kg) relative to BPR/LightGCN in the
-same category (224.9 and 236.5 kg). Overall, Figures~\ref{fig:lambda-electronics}
-through~\ref{fig:lambda-sports} answer RQ1 and RQ2 positively for BPR and LightGCN, and
-partially for NeuMF outside Electronics.
-
-%-----------------------------------------------------------------------
-\subsection{Engagement and Carbon Pareto Frontiers}
-\label{sec:pareto-results}
-%-----------------------------------------------------------------------
-
-The Pareto frontier directly characterises the achievable operating points: configurations
-for which no other $\lambda$ value simultaneously achieves higher engagement and lower
-carbon footprint.
-
-% ---- Figures 7-9: per-model Pareto, one figure per category ----------
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_electronics_BPR}
-    \caption{BPR.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_electronics_LightGCN}
-    \caption{LightGCN.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_electronics_NeuMF}
-    \caption{NeuMF.}
-  \end{subfigure}
-  \caption{Engagement and carbon Pareto frontiers for Electronics. Each point
-    corresponds to one $\lambda$ value; red points and lines denote
-    Pareto-optimal operating points, and the star marks the
-    engagement-only baseline ($\lambda=0$).}
-  \label{fig:pareto-electronics}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_home_and_kitchen_BPR}
-    \caption{BPR.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_home_and_kitchen_LightGCN}
-    \caption{LightGCN.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_home_and_kitchen_NeuMF}
-    \caption{NeuMF.}
-  \end{subfigure}
-  \caption{Engagement and carbon Pareto frontiers for Home and Kitchen,
-    shown in the same format as Figure~\ref{fig:pareto-electronics}.}
-  \label{fig:pareto-home}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_sports_and_outdoors_BPR}
-    \caption{BPR.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_sports_and_outdoors_LightGCN}
-    \caption{LightGCN.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{pareto_sports_and_outdoors_NeuMF}
-    \caption{NeuMF.}
-  \end{subfigure}
-  \caption{Engagement and carbon Pareto frontiers for Sports and Outdoors,
-    shown in the same format as Figure~\ref{fig:pareto-electronics}.}
-  \label{fig:pareto-sports}
-\end{figure}
-
-\paragraph{Findings.}
-Table~\ref{tab:pareto-summary} reports the best Pareto operating point per model under the
-$\geq$10\% carbon reduction constraint. Several patterns stand out.
-
-First, BPR and LightGCN achieve their best Pareto points at high $\lambda$ values
-(0.60--0.70 for Electronics/Home; 0.075--0.10 for Sports) because their score
-distributions are flat enough that the re-ranker can aggressively favour low-carbon items
-without destroying relevance ordering. Electronics BPR at $\lambda=0.70$ delivers 73.2\%
-carbon reduction while actually recording a marginal NDCG gain (0.0078 vs.\ baseline
-0.0077).
-
-Second, NeuMF's Pareto frontier is structurally different. In Electronics, the best
-achievable $\geq$10\% point is $\lambda=0.50$ with only 10.0\% reduction (the engagement
-cliff arrives well before any substantial carbon benefit is secured). In Home \& Kitchen
-and Sports \& Outdoors, NeuMF's frontiers are more favourable (50.6\% and 10.9\% reduction
-respectively), reflecting the later cliffs identified in the sensitivity analysis.
-
-Third, Recall@10 closely tracks NDCG@10 at every Pareto-optimal point, confirming that
-the re-ranker changes \emph{which} low-carbon items enter the top-10 without restructuring
-the recall pool as a whole.
+NeuMF behaves differently. Its higher baseline engagement comes with a more peaked score
+distribution, so re-ranking disrupts relevance earlier, most clearly in Electronics where
+only 7.6\% carbon reduction fits within the same 5\% NDCG budget. Home \& Kitchen is the
+exception: there, moderate $\lambda$ values improve both NDCG@10 and carbon footprint.
+The main takeaway is that substantial carbon savings are often available before
+recommendation quality collapses, but the size of that flat region depends strongly on the
+backbone model.
 
 %-----------------------------------------------------------------------
 \subsection{Cross-Model Comparison}
 \label{sec:cross-model}
 %-----------------------------------------------------------------------
 
-We overlay the Pareto frontiers of all three models within each category to identify which
-recommendation backbone yields the best engagement and carbon trade-off, addressing RQ3.
+We use Pareto frontiers to compare the non-dominated engagement and carbon operating points
+across models. Figure~\ref{fig:multimodel-pareto} overlays the Pareto-optimal frontiers of
+all three recommenders within each category, and Table~\ref{tab:pareto-summary} reports one
+representative operating point per model and category subject to at least 10\% carbon
+reduction. Additional per-category Pareto plots are provided in the appendix
+(Figures~\ref{fig:pareto-electronics}--\ref{fig:pareto-sports}).
 
-% ---- Figure 10: multi-model overlay, one panel per category ----------
 \begin{figure}[H]
   \centering
   \begin{subfigure}[t]{0.32\textwidth}
@@ -935,71 +718,30 @@ recommendation backbone yields the best engagement and carbon trade-off, address
   \label{fig:multimodel-pareto}
 \end{figure}
 
-% ---- Figure 11: best Pareto points summary bar chart -----------------
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\textwidth]{best_pareto_summary_bar}
-  \caption{Best Pareto operating point per model and category, subject to
-    at least 10\% carbon reduction relative to $\lambda=0$. The left
-    panel reports NDCG@10 at the chosen operating point; the right panel
-    reports the corresponding carbon reduction.}
-  \label{fig:best-pareto-summary}
-\end{figure}
+NeuMF provides the strongest absolute engagement in all three categories. Its
+engagement-only NDCG@10 is highest in Electronics, Home \& Kitchen, and Sports \&
+Outdoors, and this advantage carries over to the representative Pareto operating points in
+Table~\ref{tab:pareto-summary}. If the main objective is to preserve the highest possible
+recommendation quality, NeuMF is the strongest backbone in this comparison.
 
-\paragraph{Findings.}
-NeuMF provides the strongest baseline engagement in all three categories: its $\lambda=0$
-NDCG@10 is 0.0618 in Electronics, 0.0152 in Home and Kitchen, and 0.0102 in Sports and
-Outdoors (substantially higher than LightGCN at 0.0248, 0.0065, and 0.0101, and BPR at
-0.0077, 0.0035, and 0.0036). This advantage carries over to the $\geq$10\%
-carbon-constrained operating points: NeuMF retains the highest absolute NDCG@10 across all
-categories.
-
-Absolute engagement level and carbon flexibility trade off in opposite directions. Because
-NeuMF's score distribution is more peaked, its re-ranking frontier collapses earlier.
-Within a 5\% NDCG loss budget, BPR leads in Electronics (86.3\%) and Home \& Kitchen
-(84.1\%) while LightGCN leads in Sports \& Outdoors (74.4\%). NeuMF matches or leads only
-in Home \& Kitchen (81.1\%), where re-ranking coincidentally improves NDCG. In Electronics,
-NeuMF achieves only 7.6\% within the 5\% NDCG budget, an order of magnitude less than
-BPR/LightGCN.
-
-This directly answers RQ3: model choice determines both the level of engagement and the
-flexibility of the carbon frontier. Practitioners targeting maximum absolute recommendation
-quality should prefer NeuMF; those targeting maximum low-cost carbon reduction should
-prefer BPR or LightGCN, accepting the lower baseline NDCG as a starting point.
+That advantage comes with less carbon flexibility. Because NeuMF's scores are more peaked,
+its frontier collapses earlier under carbon-aware re-ranking, especially in Electronics. By
+contrast, BPR and LightGCN usually expose more low-cost carbon headroom: within a 5\% NDCG
+budget, BPR leads in Electronics and Home \& Kitchen, while LightGCN leads in Sports \&
+Outdoors. Model choice therefore governs not only the baseline level of engagement, but
+also how much sustainability improvement is available before the ranking quality breaks
+down.
 
 %-----------------------------------------------------------------------
 \subsection{Category-Level Variation}
 \label{sec:variation-results}
 %-----------------------------------------------------------------------
 
-We now fix the model and compare Pareto frontiers across the three product categories to
-understand how category-level PCF distributions drive differences in the achievable
-trade-off.
+The achievable trade-off also depends on the product category. Figure~\ref{fig:carbon-heatmap}
+summarises the maximum carbon reduction achievable while limiting NDCG@10 degradation to at
+most 5\% relative to the $\lambda=0$ baseline; the corresponding cross-category frontier
+overlays are moved to the appendix (Figure~\ref{fig:cross-category-pareto}).
 
-% ---- Figure 12: cross-category overlay, one panel per model ----------
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{cross_category_pareto_BPR}
-    \caption{BPR.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{cross_category_pareto_LightGCN}
-    \caption{LightGCN.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \includegraphics[width=\textwidth]{cross_category_pareto_NeuMF}
-    \caption{NeuMF.}
-  \end{subfigure}
-  \caption{Cross-category Pareto frontier comparison, one panel per model.
-    Each panel overlays the three product categories to isolate category
-    effects while holding the recommendation backbone fixed.}
-  \label{fig:cross-category-pareto}
-\end{figure}
-
-% ---- Figure 13: carbon reduction heatmap ----------------------------
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.65\textwidth]{carbon_reduction_heatmap}
@@ -1009,55 +751,41 @@ trade-off.
   \label{fig:carbon-heatmap}
 \end{figure}
 
-\paragraph{Findings.}
-Category-level variation is substantial and interacts with model choice in non-obvious
-ways. At the $\lambda=0$ baseline, Sports \& Outdoors has the highest AvgPCF@10 for BPR
-(297.3 kg) and LightGCN (309.9 kg), reflecting heavier outdoor and sporting equipment in
-those models' candidate pools. Electronics NeuMF, by contrast, has a surprisingly low
-baseline AvgPCF@10 of only 58.1 kg, suggesting that NeuMF's stronger engagement model
-steers users toward lighter electronic accessories rather than heavy appliances.
+Category-level variation is substantial. Home \& Kitchen is the most carbon-flexible
+category overall: all three models exceed 80\% reduction within the 5\% NDCG budget.
+Electronics shows the strongest model dependence, ranging from 86.3\% reduction for BPR to
+only 7.6\% for NeuMF. Sports \& Outdoors sits between these extremes, with LightGCN and
+BPR retaining substantial carbon headroom but NeuMF remaining relatively constrained.
 
-The heatmap (Figure~\ref{fig:carbon-heatmap}) summarises maximum carbon reduction within
-a 5\% NDCG budget. Electronics BPR (86.3\%) and Home \& Kitchen BPR (84.1\%) are the most
-carbon-flexible model and category combinations; Home \& Kitchen is notable in that
-\emph{all three models} achieve above 80\% reduction (BPR 84.1\%, LightGCN 83.7\%, NeuMF
-81.1\%), suggesting that the Home \& Kitchen item distribution offers rich low-carbon
-substitutes at every model's engagement frontier. Electronics NeuMF (7.6\%) is the clear
-outlier: its early engagement cliff leaves almost no usable carbon headroom within the
-quality constraint.
+These differences suggest a genuine model and category interaction. The attainable carbon
+reduction depends jointly on the category-specific PCF distribution and on how sharply the
+underlying recommender separates items by engagement score, so a single $\lambda$ policy is
+unlikely to transfer cleanly across both models and product domains.
 
-These findings confirm a genuine model and category interaction: the achievable carbon
-reduction is shaped jointly by the PCF distribution of the category's item pool and the
-sharpness of the recommendation model's score distribution.
-
-% ---- Summary table ---------------------------------------------------
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{llrrrrc}
+\begin{tabular}{llrrr}
 \hline
-Category & Model & NDCG@10 & Recall@10 & AvgPCF@10 & Carbon red.\ (\%) & $\lambda^*$ \\
+Category & Model & NDCG@10 & Carbon red.\ (\%) & $\lambda^*$ \\
 \hline
-Electronics      & BPR      & 0.0078 & 0.0152 & 59.7  & 73.2\% & 0.70 \\
-                 & LightGCN & 0.0249 & 0.0416 & 89.2  & 40.2\% & 0.25 \\
-                 & NeuMF    & 0.0562 & 0.1065 & 52.3  & 10.0\% & 0.50 \\
+Electronics      & BPR      & 0.0078 & 73.2\% & 0.70 \\
+                 & LightGCN & 0.0249 & 40.2\% & 0.25 \\
+                 & NeuMF    & 0.0562 & 10.0\% & 0.50 \\
 \hline
-Home \& Kitchen  & BPR      & 0.0035 & 0.0070 & 108.8 & 54.0\% & 0.60 \\
-                 & LightGCN & 0.0066 & 0.0131 & 107.2 & 52.3\% & 0.60 \\
-                 & NeuMF    & 0.0164 & 0.0351 & 52.8  & 50.6\% & 0.80 \\
+Home \& Kitchen  & BPR      & 0.0035 & 54.0\% & 0.60 \\
+                 & LightGCN & 0.0066 & 52.3\% & 0.60 \\
+                 & NeuMF    & 0.0164 & 50.6\% & 0.80 \\
 \hline
-Sports \& Outdoors & BPR    & 0.0036 & 0.0065 & 259.0 & 12.9\% & 0.075 \\
-                 & LightGCN & 0.0101 & 0.0181 & 254.5 & 17.9\% & 0.10 \\
-                 & NeuMF    & 0.0101 & 0.0212 & 165.9 & 10.9\% & 0.25 \\
+Sports \& Outdoors & BPR    & 0.0036 & 12.9\% & 0.075 \\
+                 & LightGCN & 0.0101 & 17.9\% & 0.10 \\
+                 & NeuMF    & 0.0101 & 10.9\% & 0.25 \\
 \hline
 \end{tabular}
-\caption{Best Pareto operating point ($\lambda^*$) per model and category,
-subject to $\geq$10\% carbon reduction relative to the $\lambda=0$ baseline.
-NDCG@10 and Recall@10 are measured at $\lambda^*$; AvgPCF@10 is in
-kg~CO$_2$e at $\lambda^*$; carbon reduction is relative to the $\lambda=0$
-baseline. Baseline NDCG@10 values (not shown) are: Electronics 0.0077/0.0248/0.0618,
-Home \& Kitchen 0.0035/0.0065/0.0152, Sports \& Outdoors 0.0036/0.0101/0.0102
-for BPR/LightGCN/NeuMF respectively.}
+\caption{Representative Pareto operating point ($\lambda^*$) per model and category,
+subject to at least 10\% carbon reduction relative to the $\lambda=0$ baseline. NDCG@10
+is measured at $\lambda^*$; carbon reduction is relative to the $\lambda=0$ baseline.
+Recall@10 is omitted because it closely tracks NDCG@10 at these operating points.}
 \label{tab:pareto-summary}
 \end{table}
 
@@ -1143,14 +871,6 @@ explicit, auditable parameter rather than being absorbed into model training. Th
 transparency aligns with the accountability requirements of the EU Digital Services
 Act~\cite{dsa2022} and ensures that the trade-off between user engagement and environmental
 impact remains open to inspection and deliberate adjustment by platform operators.
-
-Several limitations should be noted. The framework relies on offline evaluation using
-review-based implicit feedback, which introduces selection bias and missing negatives. PCF
-estimates carry uncertainty relative to full life-cycle assessments, and errors in the
-upstream estimation module propagate to the downstream re-ranking. Future work could
-address these limitations through online A/B experiments, richer behavioral datasets, and
-tighter integration of carbon objectives into model training rather than post-hoc
-re-ranking.
 
 % ----------------------------
 % Bibliography
@@ -1275,6 +995,210 @@ few-shot LLM estimate from \texttt{Qwen/Qwen2.5-3B-Instruct}, so the selected PC
 is effectively identical to the few-shot prediction across the Amazon catalog. The 11
 fallback items are assigned the neighbour-average estimate.
 
+\subsection*{PCF Estimation Diagnostics}
+
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\textwidth]{pcf_subset_rmse}
+    \caption{RMSE.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\textwidth]{pcf_subset_mae}
+    \caption{MAE.}
+  \end{subfigure}
+
+  \vspace{0.3cm}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\textwidth]{pcf_subset_median_ae}
+    \caption{Median absolute error.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\textwidth]{pcf_subset_spearman}
+    \caption{Spearman rank correlation.}
+  \end{subfigure}
+  \caption{PCF estimation accuracy on the full 866-item holdout and the
+    consumer-scale subset ($\mathrm{PCF}_{\mathrm{true}} \leq 10{,}000$).
+    The full-holdout error metrics are dominated by a small number of
+    extreme industrial products, whereas the consumer-scale subset is
+    better aligned with the Amazon recommendation setting studied
+    downstream.}
+  \label{fig:pcf-subset-accuracy}
+\end{figure}
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{carbon_catalogue_pcf_by_sector_paper}
+  \caption{Distribution of predicted PCF (few-shot) across Carbon Catalogue sectors used in PCF estimation
+    diagnostics. Sectors span a wide range, including a heavy industrial
+    tail that drives large errors on the full 866-item holdout relative to
+    the consumer-scale benchmark in Table~\ref{tab:pcf}.}
+  \label{fig:pcf-downstream-dist}
+\end{figure}
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\textwidth]{least_green_categories_paper}
+  \caption{Highest-average-PCF categories in the Carbon Catalogue based on
+    the predicted values. A few heavy industrial sectors dominate the
+    extreme tail, which is precisely why full-holdout RMSE paints a much
+    harsher picture of LLM-based estimation than the consumer-scale subset
+    used as the main benchmark.}
+  \label{fig:pcf-sector-tail}
+\end{figure}
+
+\subsection*{Additional Results Figures}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{lambda_sensitivity_home_and_kitchen_BPR}
+    \caption{BPR.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{lambda_sensitivity_home_and_kitchen_LightGCN}
+    \caption{LightGCN.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{lambda_sensitivity_home_and_kitchen_NeuMF}
+    \caption{NeuMF.}
+  \end{subfigure}
+  \caption{$\lambda$ sensitivity for the Home and Kitchen category, shown
+    in the same format as Figure~\ref{fig:lambda-electronics}.}
+  \label{fig:lambda-home}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{lambda_sensitivity_sports_and_outdoors_BPR}
+    \caption{BPR.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{lambda_sensitivity_sports_and_outdoors_LightGCN}
+    \caption{LightGCN.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{lambda_sensitivity_sports_and_outdoors_NeuMF}
+    \caption{NeuMF.}
+  \end{subfigure}
+  \caption{$\lambda$ sensitivity for the Sports and Outdoors category,
+    shown in the same format as Figure~\ref{fig:lambda-electronics}.}
+  \label{fig:lambda-sports}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_electronics_BPR}
+    \caption{BPR.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_electronics_LightGCN}
+    \caption{LightGCN.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_electronics_NeuMF}
+    \caption{NeuMF.}
+  \end{subfigure}
+  \caption{Engagement and carbon Pareto frontiers for Electronics. Each point
+    corresponds to one $\lambda$ value; red points and lines denote
+    Pareto-optimal operating points, and the star marks the
+    engagement-only baseline ($\lambda=0$).}
+  \label{fig:pareto-electronics}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_home_and_kitchen_BPR}
+    \caption{BPR.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_home_and_kitchen_LightGCN}
+    \caption{LightGCN.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_home_and_kitchen_NeuMF}
+    \caption{NeuMF.}
+  \end{subfigure}
+  \caption{Engagement and carbon Pareto frontiers for Home and Kitchen,
+    shown in the same format as Figure~\ref{fig:pareto-electronics}.}
+  \label{fig:pareto-home}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_sports_and_outdoors_BPR}
+    \caption{BPR.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_sports_and_outdoors_LightGCN}
+    \caption{LightGCN.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{pareto_sports_and_outdoors_NeuMF}
+    \caption{NeuMF.}
+  \end{subfigure}
+  \caption{Engagement and carbon Pareto frontiers for Sports and Outdoors,
+    shown in the same format as Figure~\ref{fig:pareto-electronics}.}
+  \label{fig:pareto-sports}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{best_pareto_summary_bar}
+  \caption{Best Pareto operating point per model and category, subject to
+    at least 10\% carbon reduction relative to $\lambda=0$. The left
+    panel reports NDCG@10 at the chosen operating point; the right panel
+    reports the corresponding carbon reduction.}
+  \label{fig:best-pareto-summary}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{cross_category_pareto_BPR}
+    \caption{BPR.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{cross_category_pareto_LightGCN}
+    \caption{LightGCN.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \includegraphics[width=\textwidth]{cross_category_pareto_NeuMF}
+    \caption{NeuMF.}
+  \end{subfigure}
+  \caption{Cross-category Pareto frontier comparison, one panel per model.
+    Each panel overlays the three product categories to isolate category
+    effects while holding the recommendation backbone fixed.}
+  \label{fig:cross-category-pareto}
+\end{figure}
+
+
+
+
+
+
 \subsection*{LLM Prompt Template}
 
 The few-shot prompt template used for PCF estimation is shown in
@@ -1284,7 +1208,7 @@ target Amazon product.
 
 \begin{figure}[H]
   \centering
-  \scalebox{0.36}{\input{llm_prompt}}
+  \scalebox{0.75}{\input{llm_prompt}}
   \caption{Few-shot LLM prompt template for PCF estimation.}
   \label{fig:llm-prompt-appendix}
 \end{figure}
