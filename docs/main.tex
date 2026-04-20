@@ -494,8 +494,12 @@ We evaluate the carbon-aware recommendation lists using both engagement and sust
 metrics.
 
 \paragraph{Engagement metrics.}
-We report NDCG@10 and Recall@10, which measure the quality of the top-10 recommended items
-using observed test interactions as ground truth.
+We use NDCG@10 as the primary engagement metric. NDCG is well-suited to our setting
+because it rewards placing the held-out relevant item higher in the top-10 list, which is
+exactly the behavior that carbon-aware re-ranking changes. We do not emphasize Recall@10 in
+the report because evaluation uses a leave-one-out test set with one held-out item per
+user, so Recall@10 collapses to hit rate at 10 and is largely redundant with NDCG@10 while
+being less sensitive to rank position.
 
 \paragraph{Sustainability metric.}
 We measure environmental impact using AvgPCF@10, defined as the average predicted product
@@ -514,7 +518,7 @@ engagement-only baseline ($\lambda=0$):
 
 \paragraph{Pareto frontier.}
 To characterize the engagement and sustainability trade-off, we vary $\lambda$ over a fixed
-grid and compute NDCG@10, Recall@10, and AvgPCF@10 for each setting. We then plot NDCG@10
+grid and compute NDCG@10 and AvgPCF@10 for each setting. We then plot NDCG@10
 against AvgPCF@10 to obtain a Pareto frontier, identifying operating points for which no
 other configuration simultaneously achieves higher engagement and lower carbon footprint.
 
@@ -552,7 +556,7 @@ These baselines span collaborative, neural, and graph-based recommendation famil
 
 For each candidate generation baseline, we apply carbon-aware re-ranking over a sweep of
 $\lambda$ values and evaluate the resulting top-10 recommendation lists using NDCG@10,
-Recall@10, AvgPCF@10, and carbon reduction relative to the $\lambda=0$ baseline. This
+AvgPCF@10, and carbon reduction relative to the $\lambda=0$ baseline. This
 protocol allows us to measure both the recommendation cost and the environmental benefit of
 increasing the weight placed on carbon footprint.
 
@@ -784,8 +788,7 @@ Sports \& Outdoors & BPR    & 0.0036 & 12.9\% & 0.075 \\
 \end{tabular}
 \caption{Representative Pareto operating point ($\lambda^*$) per model and category,
 subject to at least 10\% carbon reduction relative to the $\lambda=0$ baseline. NDCG@10
-is measured at $\lambda^*$; carbon reduction is relative to the $\lambda=0$ baseline.
-Recall@10 is omitted because it closely tracks NDCG@10 at these operating points.}
+is measured at $\lambda^*$; carbon reduction is relative to the $\lambda=0$ baseline.}
 \label{tab:pareto-summary}
 \end{table}
 
