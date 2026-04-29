@@ -130,7 +130,9 @@ University of California, Berkeley
 
 \begin{abstract}
 
-E-commerce recommender systems strongly influence which products users consider and purchase, yet sustainability signals such as Product Carbon Footprint (PCF) are almost never available at catalog scale. We study carbon-aware product recommendation in the realistic setting where PCF labels are missing for most items and must be inferred. We first estimate product-level carbon footprints via a retrieval-augmented PCF estimation pipeline that transfers supervision from the Carbon Catalogue (a small set of life-cycle-assessed products) to a large unlabeled e-commerce catalog using semantic similarity search, few-shot LLM prompting, and a nearest-neighbour fallback. We then apply a carbon-aware post-hoc re-ranking strategy on top of relevance scores produced by three established recommendation models (BPR, NeuMF, LightGCN), trading off predicted engagement against estimated carbon footprint through a single tunable parameter $\lambda$. We evaluate the framework on the Amazon Reviews dataset across three product categories: \textit{Home and Kitchen}, \textit{Sports and Outdoors}, and \textit{Electronics}. By sweeping $\lambda$, we construct Pareto frontiers that characterize the achievable engagement and carbon trade-off for each model and category. Substantial carbon reductions are achievable at minimal engagement cost across all models and categories, and the amount of available carbon headroom depends on both the recommendation model and the category-specific carbon scale. \footnote{Code available at: \url{https://github.com/andersvestrum/carbon-aware-recsys}.}
+E-commerce recommender systems strongly influence which products users consider and purchase, yet sustainability signals such as Product Carbon Footprint (PCF) are almost never available at catalog scale. We study carbon-aware product recommendation in the realistic setting where PCF labels are missing for most items and must be inferred. We first estimate product-level carbon footprints via a retrieval-augmented PCF estimation pipeline that transfers supervision from the Carbon Catalogue (a small set of life-cycle-assessed products) to a large unlabeled e-commerce catalog using semantic similarity search, few-shot LLM prompting, and a nearest-neighbour fallback. We then apply a carbon-aware post-hoc re-ranking strategy on top of relevance scores produced by three established recommendation models (BPR, NeuMF, LightGCN), trading off predicted engagement against estimated carbon footprint through a single tunable parameter $\lambda$. We evaluate the framework on the Amazon Reviews dataset across three product categories: \textit{Home and Kitchen}, \textit{Sports and Outdoors}, and \textit{Electronics}. By sweeping $\lambda$, we construct Pareto frontiers that characterize the achievable engagement and carbon trade-off for each model and category. Substantial carbon reductions are achievable at minimal engagement cost across
+all models and categories. However, the available carbon headroom varies by model
+and category, underscoring the importance of model choice and domain context. \footnote{Code available at: \url{https://github.com/andersvestrum/carbon-aware-recsys}.}
 
 \end{abstract}
 
@@ -167,7 +169,7 @@ demand toward lower-impact alternatives without restricting user choice.
 
 Recent research has therefore begun to explore \emph{sustainability-aware recommender
 systems}, where environmental signals such as carbon footprint are incorporated into
-recommendation decisions~\cite{spillo2023greenerrec, spillo2023sustainabilityaware,
+recommendation decisions~\cite{kalisvaart2025greenerrec, spillo2023sustainabilityaware,
 ecoa2026, vicenti2026pcfllm}. One important sustainability signal is the \emph{Product
 Carbon Footprint (PCF)}, typically measured in kilograms of CO$_2$ equivalent and estimated
 using life-cycle assessment (LCA) methodologies~\cite{meinrenken2022carboncatalogue}.
@@ -209,7 +211,7 @@ recommendation performance across product categories and model families.
 
 \paragraph{Contributions.}
 Prior work on sustainability-aware recommendation either assumes item-level PCF labels are
-already available~\cite{spillo2023sustainabilityaware, spillo2023greenerrec} or operates
+already available~\cite{spillo2023sustainabilityaware, kalisvaart2025greenerrec} or operates
 on small, domain-specific datasets~\cite{vicenti2026pcfllm, ecoa2026}. We address the
 realistic large-scale setting where labels are absent for nearly all catalog items. The
 specific contributions are:
@@ -240,9 +242,9 @@ Recent research has begun to incorporate environmental objectives into recommend
 Early work demonstrates that including carbon footprint information in recommendation
 ranking can reveal trade-offs between recommendation accuracy and environmental
 impact~\cite{spillo2023sustainabilityaware, ecoa2026, vicenti2026pcfllm}. Similarly,
-sustainability-aware recommendation frameworks have shown that post-hoc re-ranking
-strategies can reduce the average footprint of recommended items while preserving
-acceptable levels of recommendation quality~\cite{kalisvaart2025greenerrec}. These studies
+sustainability-aware recommendation frameworks have shown that ...post-hoc re-ranking strategies can reduce the average footprint of recommended items
+while preserving recommendation quality, explicitly characterizing the trade-off between
+accuracy and environmental impact~\cite{kalisvaart2025greenerrec}. These studies
 establish the feasibility of incorporating environmental signals into recommender pipelines,
 but typically operate on domain-specific datasets with known footprint labels. Broader
 surveys of the field have further identified a systematic gap in evaluation metrics that
@@ -457,11 +459,11 @@ Our recommendation pipeline is modular and consists of three stages.
 We process the Amazon Reviews dataset to construct user and item interaction histories. Each
 review is treated as implicit feedback indicating engagement. Interactions are split into
 training, validation, and test sets by timestamp, ensuring each user's held-out
-interactions occur strictly after their training history. To make experimentation tractable
-while preserving dataset diversity, we sample up to 1{,}000 users per category, yielding
-approximately 6{,}400--6{,}550 interactions per category after filtering. PCF estimates are
+interactions occur strictly after their training history. After filtering and RecBole formatting, the category-specific datasets contain tens of
+thousands of users, 24{,}000 items per category, and between 535{,}000 and
+1.04 million interactions (Table~\ref{tab:dataset-stats}). PCF estimates are
 assigned to items from a catalog of 72{,}000 scored Amazon products; items without a PCF
-estimate are excluded from re-ranking.
+estimate or user interaction are excluded from re-ranking.
 
 \paragraph{Candidate generation.}
 For each user in the test set, we generate a candidate set of top-$K$ recommendations
@@ -496,11 +498,19 @@ metrics.
 \paragraph{Engagement metrics.}
 We use NDCG@10 as the primary engagement metric. NDCG is well-suited to our setting
 because it rewards placing the held-out relevant item higher in the top-10 list, which is
-exactly the behavior that carbon-aware re-ranking changes. We do not emphasize Recall@10 in
-the report because evaluation uses a leave-one-out test set with one held-out item per
-user, so Recall@10 collapses to hit rate at 10 and is largely redundant with NDCG@10 while
-being less sensitive to rank position.
-
+exactly the behavior that carbon-aware re-ranking changes. While NDCG@10 captures ranking quality, it is computed under a leave-one-out
+protocol with a single held-out item per user and therefore does not fully
+represent user utility in settings with multiple relevant items. The metric is
+appropriate for controlled offline comparison, but future work should validate
+these findings using richer relevance signals and online evaluation. For context, a random ranking
+over the item set yields an expected NDCG@10 on the order of $10^{-4}$, indicating that all
+evaluated models perform substantially above chance.\footnote{Under a uniform random ranking over $N$ items with a single relevant item,
+the probability that the item appears at rank $i$ is $1/N$. The expected NDCG@10 is
+$\mathbb{E}[\mathrm{NDCG@10}] = \frac{1}{N} \sum_{i=1}^{10} \frac{1}{\log_2(i+1)}$,
+which evaluates to approximately $1.9 \times 10^{-4}$ for $N \approx 24{,}000$,
+consistent with the scale of our item sets.}
+We do not emphasize Recall@10 because, under leave-one-out evaluation with a single
+held-out item per user, it reduces to a hit rate at 10 and does not capture ranking quality.
 \paragraph{Sustainability metric.}
 We measure environmental impact using AvgPCF@10, defined as the average predicted product
 carbon footprint of items appearing in each user's top-10 recommendation list.
@@ -532,10 +542,16 @@ reduced through carbon-aware re-ranking while preserving recommendation quality.
 
 \subsection{Experimental Setup}
 
-We follow the pipeline described in Section~4. Each category is run with 1{,}000 sampled
-users; candidate generation models are trained on the training split and scored on held-out
-test users. All evaluation is performed on top-10 recommendation lists. $\lambda$ is swept
-over a 25-point grid spanning $[0,1]$. The sweep uses smaller increments near the extremes
+We follow the pipeline described in Section~4. Candidate generation models are trained on
+the timestamp-ordered training split and scored on held-out test users. Evaluation is
+performed on top-10 recommendation lists over category-specific item sets
+(24{,}000 items per category; Table~\ref{tab:dataset-stats}).
+
+We generate top-$K$ candidate sets (with $K=100$) for each user and apply carbon-aware
+re-ranking within this candidate pool. The resulting top-10 lists are evaluated using the
+held-out user--item interactions from the test split.
+
+$\lambda$ is swept over a 25-point grid spanning $[0,1]$. The sweep uses smaller increments near the extremes
 where the trade-off changes most rapidly: increments of 0.025 for $\lambda \leq 0.1$,
 increments of 0.05--0.1 between $\lambda=0.1$ and $\lambda=0.8$, and increments of 0.01
 from $\lambda=0.90$ to $\lambda=1.00$ to resolve the engagement cliff.
@@ -674,7 +690,14 @@ and~\ref{fig:lambda-sports}).
   \label{fig:lambda-electronics}
 \end{figure}
 
-The dominant pattern is a plateau followed by a cliff. For BPR and LightGCN, NDCG@10
+The dominant pattern is a plateau followed by a cliff, consistent with
+prior sustainability-aware recommendation work~\cite{kalisvaart2025greenerrec},
+which shows that carbon-aware re-ranking can achieve substantial reductions
+in footprint with only minor losses in recommendation quality. In particular, the magnitude of achievable carbon reduction in our setting
+(typically 50--80\% within a 5\% NDCG budget for BPR and LightGCN) is
+comparable to the ranges reported in prior work. This plateau suggests that early re-ranking primarily affects lower-ranked
+items, while the top-ranked item remains stable until the carbon penalty
+becomes sufficiently large. For BPR and LightGCN, NDCG@10
 remains nearly flat through most of the $\lambda$ grid while AvgPCF@10 falls steadily,
 and the sharp engagement drop appears only near the carbon-only regime. Within a 5\%
 NDCG loss budget, these two models deliver roughly 70--86\% carbon reduction across the
@@ -767,6 +790,19 @@ reduction depends jointly on the category-specific PCF distribution and on how s
 underlying recommender separates items by engagement score, so a single $\lambda$ policy is
 unlikely to transfer cleanly across both models and product domains.
 
+A useful way to interpret this interaction is through the concepts of
+\emph{substitutability} and \emph{score sharpness}. Categories such as
+Home \& Kitchen exhibit high substitutability, where many items provide
+similar utility but differ in carbon footprint, allowing re-ranking to
+replace higher-carbon items with lower-carbon alternatives at minimal
+relevance cost. In contrast, categories such as Electronics contain more
+functionally distinct items, limiting the availability of low-carbon
+substitutes. At the model level, NeuMF produces more peaked relevance
+distributions, making rankings more sensitive to perturbations and
+causing earlier degradation in NDCG under re-ranking. By contrast, BPR
+and LightGCN exhibit flatter score distributions, allowing greater
+flexibility to reorder items without disrupting top-ranked relevance.
+
 \begin{table}[H]
 \centering
 \small
@@ -810,11 +846,13 @@ trends. These limitations are inherent to many offline recommender-system benchm
 may affect the interpretation of engagement metrics.
 
 \paragraph{Carbon footprint estimation uncertainty.}
-Our approach relies on predicted product carbon footprints derived from metadata and
-external PCF datasets. Although predictive models enable PCF estimation at catalog scale,
-these estimates may contain significant uncertainty compared to full life-cycle assessments.
-Errors in PCF estimation could propagate into the re-ranking stage, potentially affecting
-the measured engagement and sustainability trade-offs.
+Our approach relies on predicted
+product carbon footprints derived from metadata and external PCF datasets.
+Although the few-shot LLM estimator performs well on the consumer-scale
+benchmark, the absence of ground-truth PCF labels for the Amazon catalog means
+that downstream results depend on predicted rather than observed environmental
+impact. This introduces uncertainty into the reported trade-offs, and errors in
+PCF estimation may propagate into the re-ranking stage.
 
 \paragraph{Offline evaluation limitations.}
 The experiments are conducted using offline recommendation evaluation, which cannot fully
@@ -845,15 +883,16 @@ Finally, online experiments and user studies could investigate how sustainabilit
 recommendations influence real purchasing decisions and whether transparency or explanation
 mechanisms increase user acceptance of environmentally informed rankings.
 
-\section{Discussion}\label{sec:discussion}
+\section{Discussion}
+\label{sec:discussion}
 
 Our results demonstrate that carbon-aware re-ranking introduces a structured and
-interpretable trade-off between recommendation quality and environmental impact. Across all
-models and categories, we observe a consistent \emph{plateau--cliff} pattern: for a wide
-range of $\lambda$, substantial reductions in recommended-item carbon footprint are achieved
-with minimal loss in NDCG@10, followed by a sharp degradation once the carbon signal begins
-to dominate relevance. This pattern has important implications for both the design and
-deployment of sustainability-aware recommender systems.
+interpretable trade-off between recommendation quality and environmental impact. Across
+all models and categories, we observe a consistent \emph{plateau--cliff} pattern: for a
+wide range of $\lambda$, substantial reductions in recommended-item carbon footprint are
+achieved with minimal loss in NDCG@10, followed by a sharp degradation once the carbon
+signal begins to dominate relevance. This pattern has important implications for both the
+design and deployment of sustainability-aware recommender systems.
 
 \paragraph{Low-cost sustainability gains.}
 The existence of a broad plateau region suggests that a large portion of the recommendation
@@ -873,23 +912,24 @@ BPR and LightGCN, while weaker in raw engagement, allow substantially larger car
 reductions before quality breaks down. This difference can be explained by the \emph{score
 distribution} produced by each model: NeuMF generates more peaked relevance scores, leading
 to strong separation between top-ranked items, whereas BPR and LightGCN produce flatter
-distributions that are more robust to perturbations.
+distributions that are more robust to perturbations. 
 
 This suggests that sustainability-aware recommendation is not only a re-ranking problem,
 but also a \emph{model selection problem}. Models that maximize engagement may implicitly
-reduce the available ``headroom'' for incorporating secondary objectives such as carbon
+reduce the available “headroom” for incorporating secondary objectives such as carbon
 footprint. Conversely, models with smoother score distributions may offer a more favorable
 balance between accuracy and flexibility in multi-objective settings.
 
 \paragraph{Category-dependent substitutability.}
 The results further show that the trade-off varies significantly across product categories.
-Categories such as Home and Kitchen exhibit high substitutability, where many items provide
-similar utility but differ in carbon footprint, enabling large reductions without impacting
-relevance. In contrast, categories such as Electronics contain more functionally distinct
-items, limiting the availability of low-carbon alternatives and leading to sharper
-trade-offs. This interaction between category structure and model behavior implies that a
-single global value of $\lambda$ is unlikely to be optimal in practice. Effective deployment
-may instead require category-specific or dynamically adapted trade-off parameters.
+Categories such as \textit{Home and Kitchen} exhibit high substitutability, where many items
+provide similar utility but differ in carbon footprint, enabling large reductions without
+impacting relevance. In contrast, categories such as \textit{Electronics} contain more
+functionally distinct items, limiting the availability of low-carbon alternatives and
+leading to sharper trade-offs. This interaction between category structure and model
+behavior implies that a single global value of $\lambda$ is unlikely to be optimal in
+practice. Effective deployment may instead require category-specific or dynamically adapted
+trade-off parameters.
 
 \paragraph{Re-ranking as a policy lever.}
 An important aspect of the proposed framework is that the trade-off between engagement and
@@ -904,64 +944,59 @@ algorithms prioritize content and items. By exposing the trade-off explicitly, t
 allows sustainability objectives to be incorporated without obscuring their effects.
 
 \paragraph{Relation to prior work.}
-Our findings align with prior work on sustainability-aware recommender systems, in
-particular Kalisvaart et al.~\cite{kalisvaart2025greenerrec}, who show that carbon-aware
-re-ranking can substantially reduce the environmental footprint of recommendations with
-only modest losses in accuracy. We observe the same qualitative pattern, including a broad
-region where carbon reductions can be achieved with minimal impact on engagement.
+Our findings align with prior work on sustainability-aware recommender systems,
+in particular Kalisvaart et al.~\cite{kalisvaart2025greenerrec}, who show that
+carbon-aware re-ranking can substantially reduce the environmental footprint of
+recommendations with only modest losses in accuracy. We observe the same qualitative
+pattern, including a broad region where carbon reductions can be achieved with minimal
+impact on engagement.
 
-A key difference, however, lies in the availability of sustainability signals. Prior work
-assumes access to item-level carbon labels, whereas our setting requires estimating PCF for
-sampled Amazon catalog subsets totalling 72{,}000 products, with 24{,}000 products in each
-of three categories. Our results therefore extend
-these findings to a more realistic large-scale e-commerce scenario, demonstrating that the
-engagement--sustainability trade-off persists even when environmental signals are incomplete
-and noisy. This suggests that carbon-aware re-ranking is a robust paradigm that generalizes
-beyond domains with curated sustainability data.
+A key difference, however, lies in the availability of sustainability signals. Prior
+work assumes access to item-level carbon labels, whereas our setting requires estimating
+PCF for sampled Amazon catalog subsets totalling 72{,}000 products, with 24{,}000 products in each
+of three categories. Our results therefore extend these findings to a more
+realistic large-scale e-commerce scenario, demonstrating that the engagement--sustainability
+trade-off persists even when environmental signals are incomplete and noisy. This suggests that carbon-aware re-ranking is a robust paradigm that
+generalizes beyond domains with curated sustainability data.
 
 \paragraph{Implications for future systems.}
-Taken together, these findings suggest that carbon-aware recommendation is both feasible
-and practically relevant, but that its effectiveness depends on multiple interacting
-factors: model architecture, category structure, and the availability of suitable
-alternatives. Future work could extend this framework by integrating carbon objectives
-directly into model training, exploring adaptive or personalized $\lambda$ strategies, or
-incorporating richer signals of user preference and environmental impact. More broadly, the
-results indicate that recommender systems can act as a scalable mechanism for influencing
-consumption patterns, and that even simple re-ranking strategies can yield meaningful
-environmental benefits when applied at scale.
+Taken together, these findings suggest that carbon-aware recommendation is both feasible and
+practically relevant, but that its effectiveness depends on multiple interacting factors:
+model architecture, category structure, and the availability of suitable alternatives.
+Future work could extend this framework by integrating carbon objectives directly into model
+training, exploring adaptive or personalized $\lambda$ strategies, or incorporating richer
+signals of user preference and environmental impact. More broadly, the results indicate that
+recommender systems can act as a scalable mechanism for influencing consumption patterns,
+and that even simple re-ranking strategies can yield meaningful environmental benefits when
+applied at scale.
 
-
-\section{Conclusion}\label{sec:conclusion}
+\section{Conclusion}
+\label{sec:conclusion}
 
 We studied carbon-aware product recommendation in the realistic setting where Product
-Carbon Footprint labels are unavailable for most catalog items and must be inferred. We
-proposed a modular two-stage framework: a retrieval-augmented PCF estimation pipeline that
-combines few-shot LLM predictions with a nearest-neighbour fallback to transfer supervision
-from a small set of life-cycle-assessed products to a large unlabeled e-commerce catalog,
-followed by a post-hoc re-ranking strategy that blends model-predicted engagement with
-estimated carbon footprint through a tunable parameter~$\lambda$.
+Carbon Footprint (PCF) labels are unavailable for most catalog items and must be inferred.
+We proposed a modular framework combining retrieval-augmented PCF estimation with a
+post-hoc re-ranking strategy that trades off predicted engagement and environmental impact
+through a single parameter $\lambda$.
 
-We evaluated the framework on the Amazon Reviews dataset (1{,}000 users per category)
-across three product categories and three recommendation models (BPR, NeuMF, LightGCN),
-constructing engagement and carbon Pareto frontiers for each combination. The main finding
-is that the achievable carbon reduction depends critically on which model is used. NeuMF
-achieves the highest absolute engagement (NDCG@10 of 0.0618 in Electronics) but its peaked
-score distribution creates an early engagement cliff at $\lambda\approx0.3$ in Electronics,
-limiting carbon reduction within a 5\% NDCG budget to only 7.6\%. BPR and LightGCN have
-flatter score distributions and very late cliffs ($\lambda\approx0.9$), enabling reductions
-of 69--86\% within the same quality constraint across all three categories. Home \& Kitchen
-is the most carbon-flexible category overall: all three models achieve above 80\% carbon
-reduction within a 5\% NDCG budget, and NeuMF there actually gains NDCG at moderate
-$\lambda$ values. These results suggest that post-hoc carbon-aware re-ranking can deliver
-large sustainability gains for models with flat engagement distributions, while models with
-strong score discrimination face a tighter trade-off and benefit from a smaller $\lambda$.
+Across three recommendation models and three product categories, we find that substantial
+reductions in recommended-item carbon footprint are achievable with minimal loss in
+recommendation quality. The attainable trade-off, however, depends strongly on both the
+underlying model and the category, highlighting that sustainability-aware recommendation is
+not a one-size-fits-all problem.
 
-A key design choice throughout is that the sustainability weight $\lambda$ remains an
-explicit, auditable parameter rather than being absorbed into model training. This
-transparency aligns with the accountability requirements of the EU Digital Services
-Act~\cite{dsa2022} and ensures that the trade-off between user engagement and environmental
-impact remains open to inspection and deliberate adjustment by platform operators.
+Crucially, the use of an explicit and tunable trade-off parameter makes the system
+transparent and controllable: adjusting $\lambda$ directly governs the balance between
+engagement and sustainability. This transparency aligns with the accountability requirements
+of the EU Digital Services Act~\cite{dsa2022} and ensures that the trade-off between user
+engagement and environmental impact remains open to inspection and deliberate adjustment by
+platform operators.
 
+Overall, our results show that simple, transparent re-ranking strategies can provide a
+practical and scalable path toward more sustainable recommender systems, enabling platforms
+to incorporate environmental objectives without sacrificing user experience. Given the scale of modern recommender systems, even small per-user reductions
+in carbon exposure could translate into substantial aggregate environmental
+impact.
 % ----------------------------
 % Bibliography
 % ----------------------------
@@ -1048,7 +1083,7 @@ Embedding dimension     & 384 \\
 Similarity metric       & Cosine similarity \\
 Neighbours retrieved    & 5 \\
 LLM used in the reported run & \texttt{Qwen/Qwen2.5-3B-Instruct} \\
-Evaluation rows         & 866 total (862 few-shot available) \\
+Evaluation rows         & 866 total  \\
 Downstream selected PCF & Few-shot \\
 PCF clamp range         & [0.01, 10{,}000] kg CO$_2$e \\
 Zero-shot format        & One number, no scientific notation \\
@@ -1068,12 +1103,12 @@ Few-shot reasoning      & Chain-of-thought before final estimate \\
 \hline
 Category & Users & Items & Interactions & Avg.\ interactions/user \\
 \hline
-Electronics          & 1{,}000 & 3{,}006 & 6{,}410 & 6.4 \\
-Home \& Kitchen      & 1{,}000 & 3{,}259 & 6{,}532 & 6.5 \\
-Sports \& Outdoors   & 1{,}000 & 3{,}537 & 6{,}547 & 6.5 \\
+Electronics & 110{,}550 & 24{,}000 & 1{,}036{,}192 & 9.4 \\
+Home \& Kitchen & 91{,}421 & 24{,}000 & 874{,}971 & 9.6 \\
+Sports \& Outdoors & 63{,}216 & 24{,}000 & 535{,}010 & 8.5 \\
 \hline
 \end{tabular}
-\caption{Interaction statistics per category after 1{,}000-user sampling
+\caption{Interaction statistics per category after user sampling
 and RecBole formatting. Interaction counts include all splits (train/valid/test).}
 \label{tab:dataset-stats}
 \end{table}
