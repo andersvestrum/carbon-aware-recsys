@@ -150,9 +150,8 @@ not uniform. It depends in substantial part on how purchasing decisions are stru
 presented to consumers~\cite{buldeorai2023ecommerce}.
 
 At the policy level, this urgency has found expression in legislation. The European Union's
-Directive 2024/825 on Empowering Consumers for the Green Transition mandates environmental
-transparency at the point of consumer purchase and explicitly frames behavioral change as a
-mechanism for achieving climate objectives~\cite{eu2024825}. More broadly, the European
+Directive 2024/825 on Empowering Consumers for the Green Transition strengthens rules around
+environmental claims and consumer-facing sustainability information~\cite{eu2024825}. More broadly, the European
 Green Deal, whose policy documents exhibit strong alignment with SDG~12 on sustainable
 consumption and production~\cite{koundouri2024greendeal}, treats demand-side interventions
 as a structural component of decarbonization rather than a regulatory afterthought.
@@ -212,7 +211,8 @@ recommendation performance across product categories and model families.
 Prior work on sustainability-aware recommendation either assumes item-level PCF labels are
 already available~\cite{spillo2023sustainabilityaware, spillo2023greenerrec} or operates
 on small, domain-specific datasets~\cite{vicenti2026pcfllm, ecoa2026}. We address the
-realistic large-scale setting where labels are absent for nearly all catalog items. The
+realistic large-scale setting where labels are absent for most items and PCF must be
+estimated for sampled Amazon catalog subsets across three product categories. The
 specific contributions are:
 \begin{itemize}
   \item A \emph{retrieval-augmented PCF estimation pipeline} that transfers
@@ -340,7 +340,7 @@ environmentally neutral; they function as an unseen layer of consumption infrast
 Regulatory frameworks are beginning to reflect this reality. The European Green Deal,
 launched in 2019 and operationalized through a series of legislative instruments,
 explicitly targets sustainable consumption and production as a structural priority, with
-strong alignment to SDG~12~\cite{koundurai2024greendeal}. The EU's Directive 2024/825
+strong alignment to SDG~12~\cite{koundouri2024greendeal}. The EU's Directive 2024/825
 goes further, mandating that consumers receive reliable environmental information at the
 point of purchase and prohibiting unsubstantiated environmental claims~\cite{eu2024825}.
 This directive targets product labeling and retailer disclosure, but its underlying logic
@@ -365,9 +365,10 @@ between the efficiency gains of personalized curation and the risk of limiting u
 epistemic and decisional independence. Our framework navigates this tension by making the
 trade-off parameter $\lambda$ explicit and tunable, rather than embedding a fixed
 sustainability preference invisibly into the ranking. This transparency is consistent with
-the accountability requirements emerging from the EU Digital Services Act~\cite{dsa2022},
-which imposes transparency and user-control requirements for recommendation systems operated
-by very large online platforms. Research on algorithmic feedback loops also demonstrates
+the accountability logic of the EU Digital Services Act~\cite{dsa2022}, which requires
+online platforms to explain the main parameters of their recommender systems and imposes
+stronger user-control obligations on very large online platforms, including options not
+based on profiling. Research on algorithmic feedback loops also demonstrates
 that engagement-optimized systems can silently homogenize consumer behavior over
 time~\cite{chaney2018confounding}, a dynamic that an explicit, auditable sustainability
 objective is better positioned to counteract.
@@ -409,7 +410,7 @@ Catalogue items before applying the best-performing method downstream.
 
 \paragraph{Nearest-neighbour average.}
 As a non-parametric baseline, we embed each product title using the
-all-MiniLM-L6-v2 sentence encoder~\cite{reimers2019sbert} and retrieve the $k$ nearest
+\texttt{all-MiniLM-L6-v2} sentence encoder~\cite{reimers2019sbert} and retrieve the $k$ nearest
 labelled neighbours from the Carbon Catalogue by cosine similarity. The PCF estimate is
 the unweighted average of the neighbours' known PCF values. This baseline requires no
 language model and serves as a strong non-parametric reference point.
@@ -429,8 +430,8 @@ sufficient for numeric carbon estimation, without any grounding in labeled produ
 
 \paragraph{Few-shot retrieval-augmented LLM.}
 Our primary estimator combines semantic retrieval with few-shot
-prompting~\cite{brown2020gpt3}. For each query product, we embed its title using
-\texttt{all-MiniLM-L6-v2}~\cite{reimers2019sbert} and retrieve its five nearest Carbon
+prompting~\cite{brown2020gpt3}. For each query product, we embed its title using the
+Sentence-Transformers model \texttt{all-MiniLM-L6-v2}~\cite{reimers2019sbert} and retrieve its five nearest Carbon
 Catalogue neighbours by cosine similarity. These neighbours are assembled into a structured
 prompt in which they serve as labelled in-context examples; the full prompt template is provided in
 Figure~\ref{fig:llm-prompt-appendix} in the appendix. The model is instructed to reason step by step before
@@ -535,9 +536,10 @@ reduced through carbon-aware re-ranking while preserving recommendation quality.
 We follow the pipeline described in Section~4. Each category is run with 1{,}000 sampled
 users; candidate generation models are trained on the training split and scored on held-out
 test users. All evaluation is performed on top-10 recommendation lists. $\lambda$ is swept
-over a 25-point grid spanning $[0,1]$: fine steps of 0.025 for $\lambda \leq 0.1$, coarser
-steps of 0.05--0.1 through $\lambda=0.8$, and dense steps of 0.01 from $\lambda=0.90$ to
-$\lambda=1.00$ to capture the engagement cliff precisely.
+over a 25-point grid spanning $[0,1]$. The sweep uses smaller increments near the extremes
+where the trade-off changes most rapidly: increments of 0.025 for $\lambda \leq 0.1$,
+increments of 0.05--0.1 between $\lambda=0.1$ and $\lambda=0.8$, and increments of 0.01
+from $\lambda=0.90$ to $\lambda=1.00$ to resolve the engagement cliff.
 
 \subsection{Candidate Generation Baselines}
 
@@ -595,8 +597,8 @@ module. The environmental signal is only as reliable as the estimator that produ
 
 \paragraph{Evaluation setup.}
 We evaluate all three estimation methods on a held-out slice of Carbon Catalogue products
-(seed fixed for reproducibility). For each item, the true PCF is hidden, the five nearest
-labelled neighbours are retrieved, and predictions are generated by each method. Zero-shot
+(seed fixed for reproducibility). For each Carbon Catalogue item, we hide its PCF, exclude
+it from retrieval, and predict from the five nearest remaining labelled neighbours. Zero-shot
 and few-shot prompts include a typical PCF scale and strict output format; outputs are
 clamped before evaluation. We report RMSE, MAE, median absolute error, and Spearman rank
 correlation. To keep the benchmark aligned with the consumer-product setting studied
@@ -801,8 +803,9 @@ Our experiments rely on the Amazon Reviews dataset as a proxy for user and item
 interactions. While widely used in recommender-system research, review datasets introduce
 several well-known biases. Only a small fraction of purchases result in reviews, leading to
 \emph{selection bias} where reviewers may not represent the broader user population. The
-absence of a review does not necessarily indicate negative feedback, creating challenges
-due to \emph{missing negatives}. Review data may also be affected by \emph{temporal
+absence of a review does not reveal whether the user disliked the item, liked it but never
+chose to review it, or simply had no exposure to it, creating the standard implicit-feedback
+problem of ambiguous unobserved interactions. Review data may also be affected by \emph{temporal
 confounds}, including changes in product popularity, seasonality, and shifting consumer
 trends. These limitations are inherent to many offline recommender-system benchmarks and
 may affect the interpretation of engagement metrics.
@@ -835,8 +838,8 @@ important direction for future work.
 Several directions could extend the present study. First, future work could evaluate
 carbon-aware recommendation using richer behavioral datasets that contain full browsing and
 purchase histories rather than relying on review-based proxies. Second, improving PCF
-estimation methods (for example through structured supply chain data or domain-specific
-carbon models) could reduce uncertainty in sustainability signals. Third, integrating
+estimation methods, for example through structured supply-chain data, more powerful
+domain-specific models, or larger LLMs, could reduce uncertainty in sustainability signals. Third, integrating
 carbon-aware objectives directly into recommendation model training instead of applying
 post-hoc re-ranking may yield more efficient multi-objective recommendation strategies.
 Finally, online experiments and user studies could investigate how sustainability-aware
