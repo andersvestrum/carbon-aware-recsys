@@ -24,6 +24,7 @@
 \usepackage{wrapfig}
 \usepackage{tcolorbox}
 \tcbuselibrary{skins}
+\usepackage{seqsplit}
 
 
 \definecolor{tealfill}    {HTML}{E1F5EE}
@@ -218,8 +219,7 @@ specific contributions are:
 \begin{itemize}
   \item A \emph{retrieval-augmented PCF estimation pipeline} that transfers
     supervision from 866 life-cycle-assessed products to an unlabeled e-commerce catalog
-    without requiring product-specific supply-chain data, combining few-shot LLM estimates
-    with a nearest-neighbour fallback and comparing this design against standalone
+    without requiring product-specific supply-chain data, combining few-shot LLM estimates and comparing this design against standalone
     nearest-neighbour and zero-shot LLM baselines.
   \item A \emph{multi-model Pareto analysis} across three complementary recommendation
     paradigms (pairwise collaborative filtering, neural matrix factorization, and graph
@@ -242,7 +242,7 @@ Recent research has begun to incorporate environmental objectives into recommend
 Early work demonstrates that including carbon footprint information in recommendation
 ranking can reveal trade-offs between recommendation accuracy and environmental
 impact~\cite{spillo2023sustainabilityaware, ecoa2026, vicenti2026pcfllm}. Similarly,
-sustainability-aware recommendation frameworks have shown that ...post-hoc re-ranking strategies can reduce the average footprint of recommended items
+sustainability-aware recommendation frameworks have shown that post-hoc re-ranking strategies can reduce the average footprint of recommended items
 while preserving recommendation quality, explicitly characterizing the trade-off between
 accuracy and environmental impact~\cite{kalisvaart2025greenerrec}. These studies
 establish the feasibility of incorporating environmental signals into recommender pipelines,
@@ -270,8 +270,7 @@ tasks~\cite{gao2023ragsurvey}. Asking models to reason step by step before produ
 final answer further improves numeric estimation quality~\cite{wei2022cot}.
 
 We build on these developments by employing a retrieval-augmented estimation pipeline that
-combines semantic similarity search with structured LLM prompting and a nearest-neighbour
-fallback to infer PCF values for Amazon products from available
+combines semantic similarity search with structured LLM prompting to infer PCF values for Amazon products from available
 metadata~\cite{amazon2015, amazon2023}, enabling large-scale experimentation with
 carbon-aware recommendation.
 
@@ -411,7 +410,7 @@ Catalogue items before applying the best-performing method downstream.
 
 \paragraph{Nearest-neighbour average.}
 As a non-parametric baseline, we embed each product title using the
-\texttt{all-MiniLM-L6-v2} sentence encoder~\cite{reimers2019sbert} and retrieve the $k$ nearest
+\texttt{\seqsplit{all-MiniLM-L6-v2}} sentence encoder~\cite{reimers2019sbert} and retrieve the $k$ nearest
 labelled neighbours from the Carbon Catalogue by cosine similarity. The PCF estimate is
 the unweighted average of the neighbours' known PCF values. This baseline requires no
 language model and serves as a strong non-parametric reference point.
@@ -420,7 +419,7 @@ language model and serves as a strong non-parametric reference point.
 
 \paragraph{Zero-shot LLM.}
 As a second baseline, we prompt an instruction-tuned LLM
-(\texttt{Qwen/Qwen2.5-3B-Instruct}) with the product title alone,
+(\texttt{\seqsplit{Qwen/Qwen2.5-3B-Instruct}}) with the product title alone,
 without any retrieved examples, and ask it to estimate PCF in kg\,CO$_2$e. The prompt
 specifies a typical PCF range (1--10{,}000 kg CO$_2$e) and a strict output format (one
 number, no scientific notation); parsed values are clamped to a plausible range before
@@ -432,7 +431,7 @@ sufficient for numeric carbon estimation, without any grounding in labeled produ
 \paragraph{Few-shot retrieval-augmented LLM.}
 Our primary estimator combines semantic retrieval with few-shot
 prompting~\cite{brown2020gpt3}. For each query product, we embed its title using the
-Sentence-Transformers model \texttt{all-MiniLM-L6-v2}~\cite{reimers2019sbert} and retrieve its five nearest Carbon
+Sentence-Transformers model \texttt{\seqsplit{all-MiniLM-L6-v2}}~\cite{reimers2019sbert} and retrieve its five nearest Carbon
 Catalogue neighbours by cosine similarity. These neighbours are assembled into a structured
 prompt in which they serve as labelled in-context examples; the full prompt template is provided in
 Figure~\ref{fig:llm-prompt-appendix} in the appendix. The model is instructed to reason step by step before
@@ -446,8 +445,8 @@ current implementation, downstream Amazon scoring uses a \emph{selected} PCF sig
 applies the few-shot estimates. For each Amazon catalog item, we embed its title, retrieve the
 five nearest Carbon Catalogue neighbours, and retain the resulting product-level estimate
 $\mathrm{PCF}_i$; items with insufficient metadata for embedding are excluded from
-downstream analysis. In the reported run, the full Amazon catalog is scored with the local
-\texttt{Qwen/Qwen2.5-3B-Instruct} few-shot pipeline, so the selected PCF column is driven by local Qwen predictions.
+downstream analysis. In the reported run, the full Amazon catalog is scored with
+\texttt{Qwen/Qwen2.5-3B-Instruct}.
 
 
 
@@ -487,8 +486,18 @@ s_{ui} = (1 - \lambda)\, \tilde{y}_{ui} - \lambda \, \widetilde{\mathrm{PCF}}_i,
 where $\lambda \in [0,1]$ controls the trade-off between engagement and sustainability.
 Normalising both signals before combining them ensures that $\lambda$ has a consistent and
 comparable effect across users and items regardless of the raw score scales produced by
-different recommendation models. When $\lambda = 0$, ranking depends only on
-model-predicted relevance; when $\lambda = 1$, ranking prioritizes lower-carbon items.
+different recommendation models. 
+
+This formulation corresponds to a linear scalarization of a two-objective optimisation
+problem, in which relevance is maximized and carbon footprint is minimized. The linear form
+provides a transparent and interpretable trade-off, allowing $\lambda$ to directly control
+the marginal substitution between engagement and environmental impact. While more complex
+non-linear combinations are possible, we adopt this formulation to ensure that the effect of
+$\lambda$ is monotonic and easy to audit.
+
+When $\lambda = 0$, ranking depends only on model-predicted relevance; when $\lambda = 1$,
+ranking prioritizes lower-carbon items.
+
 
 \subsection{Evaluation and Trade-off Analysis}
 
@@ -706,8 +715,7 @@ three categories.
 NeuMF behaves differently. Its higher baseline engagement comes with a more peaked score
 distribution, so re-ranking disrupts relevance earlier, most clearly in Electronics where
 only 7.6\% carbon reduction fits within the same 5\% NDCG budget. Home \& Kitchen is the
-exception: there, moderate $\lambda$ values improve both NDCG@10 and carbon footprint.
-The main takeaway is that substantial carbon savings are often available before
+exception: there, moderate $\lambda$ values improve both NDCG@10 and carbon footprint. This suggests that re-ranking can correct local ordering errors around the top-10 cutoff, where slightly misordered items are replaced by alternatives that are both more relevant and lower in carbon footprint. We emphasise that this effect is empirical and category-specific, rather than a general property of carbon-aware re-ranking. The main takeaway is that substantial carbon savings are often available before
 recommendation quality collapses, but the size of that flat region depends strongly on the
 backbone model.
 
@@ -746,14 +754,13 @@ reduction. Additional per-category Pareto plots are provided in the appendix
   \label{fig:multimodel-pareto}
 \end{figure}
 
-NeuMF provides the strongest absolute engagement in all three categories. Its
+NeuMF provides the strongest absolute engagement in all three categories. This is consistent with NeuMF’s more expressive architecture, which combines matrix factorisation and a multi-layer perceptron, enabling it to learn sharper and more selective relevance scores. Its
 engagement-only NDCG@10 is highest in Electronics, Home \& Kitchen, and Sports \&
 Outdoors, and this advantage carries over to the representative Pareto operating points in
 Table~\ref{tab:pareto-summary}. If the main objective is to preserve the highest possible
 recommendation quality, NeuMF is the strongest backbone in this comparison.
 
-That advantage comes with less carbon flexibility. Because NeuMF's scores are more peaked,
-its frontier collapses earlier under carbon-aware re-ranking, especially in Electronics. By
+That advantage comes with less carbon flexibility. Because NeuMF learns sharper, more peaked relevance distributions, its frontier collapses earlier under carbon-aware re-ranking, especially in Electronics. By
 contrast, BPR and LightGCN usually expose more low-cost carbon headroom: within a 5\% NDCG
 budget, BPR leads in Electronics and Home \& Kitchen, while LightGCN leads in Sports \&
 Outdoors. Model choice therefore governs not only the baseline level of engagement, but
@@ -791,13 +798,7 @@ underlying recommender separates items by engagement score, so a single $\lambda
 unlikely to transfer cleanly across both models and product domains.
 
 A useful way to interpret this interaction is through the concepts of
-\emph{substitutability} and \emph{score sharpness}. Categories such as
-Home \& Kitchen exhibit high substitutability, where many items provide
-similar utility but differ in carbon footprint, allowing re-ranking to
-replace higher-carbon items with lower-carbon alternatives at minimal
-relevance cost. In contrast, categories such as Electronics contain more
-functionally distinct items, limiting the availability of low-carbon
-substitutes. At the model level, NeuMF produces more peaked relevance
+\emph{substitutability} and \emph{score sharpness}. Categories such as Home \& Kitchen exhibit high substitutability, where many items provide similar utility but differ in carbon footprint. This allows re-ranking to replace higher-carbon items with lower-carbon alternatives at minimal relevance cost, and can in some cases correct local ordering errors near the top of the list. In contrast, categories such as Electronics contain more functionally distinct items, limiting the availability of low-carbon substitutes. At the model level, NeuMF produces more peaked relevance
 distributions, making rankings more sensitive to perturbations and
 causing earlier degradation in NDCG under re-ranking. By contrast, BPR
 and LightGCN exhibit flatter score distributions, allowing greater
@@ -888,7 +889,7 @@ mechanisms increase user acceptance of environmentally informed rankings.
 
 Our results demonstrate that carbon-aware re-ranking introduces a structured and
 interpretable trade-off between recommendation quality and environmental impact. Across
-all models and categories, we observe a consistent \emph{plateau--cliff} pattern: for a
+most of the models and categories, we observe a consistent \emph{plateau--cliff} pattern: for a
 wide range of $\lambda$, substantial reductions in recommended-item carbon footprint are
 achieved with minimal loss in NDCG@10, followed by a sharp degradation once the carbon
 signal begins to dominate relevance. This pattern has important implications for both the
@@ -994,9 +995,7 @@ platform operators.
 
 Overall, our results show that simple, transparent re-ranking strategies can provide a
 practical and scalable path toward more sustainable recommender systems, enabling platforms
-to incorporate environmental objectives without sacrificing user experience. Given the scale of modern recommender systems, even small per-user reductions
-in carbon exposure could translate into substantial aggregate environmental
-impact.
+to incorporate environmental objectives without sacrificing user experience. Given the scale of modern recommender systems, even small per-user reductions in carbon exposure could translate into substantial aggregate environmental impact. This positions recommendation algorithms as a high-leverage intervention point for sustainable consumption.
 % ----------------------------
 % Bibliography
 % ----------------------------
