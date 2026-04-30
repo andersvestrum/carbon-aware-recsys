@@ -251,6 +251,10 @@ surveys of the field have further identified a systematic gap in evaluation metr
 account for sustainability outcomes such as reduced carbon footprint, and have positioned
 recommender systems as instruments for achieving the UN Sustainable Development Goals
 through behavioral influence~\cite{felfernig2023sustainability}.
+Kalisvaart et al.~\cite{kalisvaart2025greenerrec} further introduce a position-aware
+greenness metric after mapping item-level emissions to a bounded greenness scale. In our
+setting, catalog-scale Amazon PCF values are inferred rather than observed, so we report
+AvgPCF@10 in kg CO$_2$e together with relative carbon reduction.
 
 \subsection{Estimating Product Carbon Footprints}
 
@@ -523,6 +527,11 @@ held-out item per user, it reduces to a hit rate at 10 and does not capture rank
 \paragraph{Sustainability metric.}
 We measure environmental impact using AvgPCF@10, defined as the average predicted product
 carbon footprint of items appearing in each user's top-10 recommendation list.
+This differs from prior work such as Kalisvaart et al.~\cite{kalisvaart2025greenerrec},
+which evaluates list greenness after transforming emissions into a bounded greenness
+score. We instead keep the metric in kg CO$_2$e. This is easier to interpret and matches
+the quantity penalized by the re-ranker. We also report relative carbon reduction to
+compare trade-offs across models and categories.
 
 \paragraph{Carbon reduction.}
 To provide an interpretable measure of environmental improvement, we additionally report
