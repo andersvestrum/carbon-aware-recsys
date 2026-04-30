@@ -223,8 +223,8 @@ specific contributions are:
     nearest-neighbour and zero-shot LLM baselines.
   \item A \emph{multi-model Pareto analysis} across three complementary recommendation
     paradigms (pairwise collaborative filtering, neural matrix factorization, and graph
-    convolution) on a large-scale public dataset, providing the first cross-model comparison
-    of engagement and carbon trade-offs in this setting.
+    convolution) on a large-scale public dataset, providing a unified comparison of
+    engagement and carbon trade-offs in a setting where item-level PCF must be inferred.
   \item A \emph{modular, auditable re-ranking design} in which the sustainability weight
     $\lambda$ is an explicit, inspectable parameter rather than an implicit model choice,
     consistent with emerging algorithmic transparency requirements~\cite{dsa2022}.
@@ -324,72 +324,42 @@ motivating the engagement and carbon trade-off analysis explored in this study.
 \label{sec:background}
 %-----------------------------------------------------------------------
 
-The technical problem addressed here, integrating carbon signals into recommender systems,
-sits at the intersection of three converging pressures: the documented environmental
-footprint of e-commerce at scale, the political institutionalization of sustainable
-consumption as a policy goal, and the growing recognition that algorithmic systems
-represent a lever of behavioral change whose social implications warrant deliberate design.
+Integrating carbon signals into recommender systems sits at the intersection of three
+pressures: the environmental footprint of e-commerce, growing policy demands for reliable
+sustainability information, and the recognition that ranking systems shape consumer
+choice~\cite{buldeorai2023ecommerce, koundouri2024greendeal, eu2024825,
+jesse2021digitalnudging}.
 
-\paragraph{The environmental footprint of e-commerce.}
-The environmental impact of online retail is substantial but heterogeneous. A systematic
-review of over twenty carbon footprint assessments finds that e-commerce's environmental
-performance relative to traditional retail varies considerably with consumer behavior,
-delivery speed, return rates, and geographic context~\cite{buldeorai2023ecommerce}. This
-heterogeneity is consequential: it implies that the composition of a consumer's purchase
-basket (and in particular the products surfaced by recommendation algorithms) directly
-shapes the carbon intensity of their shopping activity. Recommender systems are not
-environmentally neutral; they function as an unseen layer of consumption infrastructure.
+These pressures are linked. The environmental impact of e-commerce is not determined only
+by warehousing or transport in the abstract; it is also shaped by which products consumers
+are steered toward, how substitutable those products are, and how demand is distributed
+across the catalog~\cite{buldeorai2023ecommerce, olah2023sustainable}. This makes product
+exposure a meaningful sustainability variable rather than a purely marketing concern.
 
-\paragraph{Policy context: the demand for algorithmic sustainability.}
-Regulatory frameworks are beginning to reflect this reality. The European Green Deal,
-launched in 2019 and operationalized through a series of legislative instruments,
-explicitly targets sustainable consumption and production as a structural priority, with
-strong alignment to SDG~12~\cite{koundouri2024greendeal}. The EU's Directive 2024/825
-goes further, mandating that consumers receive reliable environmental information at the
-point of purchase and prohibiting unsubstantiated environmental claims~\cite{eu2024825}.
-This directive targets product labeling and retailer disclosure, but its underlying logic
-applies equally to algorithmic curation: better-informed consumers make greener choices.
-A carbon-aware recommender system can be understood as a technical implementation of the
-same transparency goal. Rather than labeling products reactively, it proactively elevates
-lower-carbon options within the consideration set.
+These pressures matter because recommendation is a form of choice architecture. Any ranking
+policy decides which products become salient, and therefore which kinds of consumption are
+amplified. In sustainability settings, this makes ranking criteria a design choice rather
+than a neutral implementation detail~\cite{jesse2021digitalnudging, halimeh2026nudging}.
 
-\paragraph{Recommender systems as choice architecture.}
-The behavioral mechanism that makes this intervention viable is well-established. A
-recommender system is, by construction, a choice architect at scale: it determines which
-products are salient, and salience is one of the most robust predictors of selection.
-Deploying a carbon-aware re-ranking strategy is therefore not an arbitrary imposition of
-external values on users; it is a deliberate choice about what the default choice
-architecture should optimize for. The question is not whether to have a choice architecture
-(since any ranking policy constitutes one) but rather which objectives that architecture
-should serve.
+At the same time, policy is moving toward more explicit treatment of sustainability
+information at the point of choice. The European Green Deal places sustainable consumption
+alongside production as a policy priority~\cite{koundouri2024greendeal}, and Directive
+2024/825 strengthens requirements around environmental claims and consumer-facing
+information~\cite{eu2024825}. These instruments do not prescribe recommender-system design,
+but they make ranking-time sustainability information more relevant rather than less.
 
-This framing also bears on questions of user autonomy. As Bonicalzi et
-al.~\cite{bonicalzi2023autonomy} discuss, recommender systems present a genuine tension
-between the efficiency gains of personalized curation and the risk of limiting users'
-epistemic and decisional independence. Our framework navigates this tension by making the
-trade-off parameter $\lambda$ explicit and tunable, rather than embedding a fixed
-sustainability preference invisibly into the ranking. This transparency is consistent with
-the accountability logic of the EU Digital Services Act~\cite{dsa2022}, which requires
-online platforms to explain the main parameters of their recommender systems and imposes
-stronger user-control obligations on very large online platforms, including options not
-based on profiling. Research on algorithmic feedback loops also demonstrates
-that engagement-optimized systems can silently homogenize consumer behavior over
-time~\cite{chaney2018confounding}, a dynamic that an explicit, auditable sustainability
-objective is better positioned to counteract.
+This framing also connects to broader concerns about autonomy and accountability. Making the
+trade-off explicit through $\lambda$ is more transparent than embedding a fixed
+sustainability preference invisibly in model training. It also aligns with concerns about
+user autonomy, platform accountability, and feedback effects in recommender
+systems~\cite{bonicalzi2023autonomy, dsa2022, chaney2018confounding}.
 
-\paragraph{Existing technical approaches.}
-Traditional collaborative filtering and neural models (including BPR, NeuMF, and
-LightGCN) have demonstrated strong performance in predicting user preferences from
-historical interaction data~\cite{recbole2021}. These models optimize for engagement or
-relevance alone, without regard for the environmental impact of recommended items. Recent
-advances in sustainability-aware recommendation have introduced environmental signals into
-this pipeline, yet a fundamental challenge persists: PCF data is missing for the majority
-of catalog items, limiting the direct application of sustainability-aware objectives at
-scale~\cite{meinrenken2022carboncatalogue}. Predictive modeling approaches using product
-metadata and LLMs have been proposed to close this gap~\cite{vicenti2026pcfllm, ecoa2026}.
-We build on these developments, combining established recommendation baselines with a
-carbon-aware re-ranking strategy and evaluating the resulting engagement and sustainability
-trade-offs in a reproducible, large-scale experimental setting.
+From a technical perspective, strong recommendation backbones already exist, but item-level
+PCF remains unavailable for most catalog items at scale~\cite{recbole2021,
+meinrenken2022carboncatalogue}. Recent work has therefore turned to metadata-based and
+LLM-based estimation to make sustainability-aware recommendation feasible in standard
+catalog settings~\cite{vicenti2026pcfllm, ecoa2026}. Our framework builds on that line of
+work by combining inferred PCF with transparent post-hoc re-ranking.
 
 
 
@@ -613,10 +583,6 @@ frontiers that summarize the achievable trade-off between engagement and environ
 impact. We additionally report carbon reduction percentages to quantify the practical
 benefit of moving away from the engagement-only baseline.
 
-Overall, this experimental design enables a systematic comparison of carbon-aware
-re-ranking across multiple recommendation backbones and provides a reproducible framework
-for studying sustainability objectives in large-scale e-commerce recommendation.
-
 
 \section{Results}\label{sec:results}
 
@@ -708,25 +674,19 @@ and~\ref{fig:lambda-sports}).
   \label{fig:lambda-electronics}
 \end{figure}
 
-The dominant pattern is a plateau followed by a cliff, consistent with
-prior sustainability-aware recommendation work~\cite{kalisvaart2025greenerrec},
-which shows that carbon-aware re-ranking can achieve substantial reductions
-in footprint with only minor losses in recommendation quality. In particular, the magnitude of achievable carbon reduction in our setting
-(typically 50--80\% within a 5\% NDCG budget for BPR and LightGCN) is
-comparable to the ranges reported in prior work. This plateau suggests that early re-ranking primarily affects lower-ranked
-items, while the top-ranked item remains stable until the carbon penalty
-becomes sufficiently large. For BPR and LightGCN, NDCG@10
-remains nearly flat through most of the $\lambda$ grid while AvgPCF@10 falls steadily,
-and the sharp engagement drop appears only near the carbon-only regime. Within a 5\%
-NDCG loss budget, these two models deliver roughly 70--86\% carbon reduction across the
-three categories.
+The dominant pattern is a plateau followed by a cliff, consistent with prior
+sustainability-aware recommendation work~\cite{kalisvaart2025greenerrec}. For BPR and LightGCN, NDCG@10
+remains nearly flat through most of the $\lambda$ grid while AvgPCF@10 falls steadily.
+Under a 5\% NDCG budget, these two models typically achieve roughly 70--86\% carbon
+reduction across the three categories.
 
-NeuMF behaves differently. Its higher baseline engagement comes with a more peaked score
+NeuMF is less flexible. Its higher baseline engagement comes with a more peaked score
 distribution, so re-ranking disrupts relevance earlier, most clearly in Electronics where
-only 7.6\% carbon reduction fits within the same 5\% NDCG budget. Home \& Kitchen is the
-exception: there, moderate $\lambda$ values improve both NDCG@10 and carbon footprint. This suggests that re-ranking can correct local ordering errors around the top-10 cutoff, where slightly misordered items are replaced by alternatives that are both more relevant and lower in carbon footprint. We emphasise that this effect is empirical and category-specific, rather than a general property of carbon-aware re-ranking. The main takeaway is that substantial carbon savings are often available before
-recommendation quality collapses, but the size of that flat region depends strongly on the
-backbone model.
+only 7.6\% carbon reduction fits within the same 5\% budget. Home \& Kitchen is the
+exception: there, moderate $\lambda$ values improve both NDCG@10 and carbon footprint.
+We treat that effect as category-specific rather than general. Overall, substantial carbon
+savings are often available before recommendation quality collapses, but the size of this
+region depends strongly on the backbone model.
 
 %-----------------------------------------------------------------------
 \subsection{Cross-Model Comparison}
@@ -763,18 +723,11 @@ reduction. Additional per-category Pareto plots are provided in the appendix
   \label{fig:multimodel-pareto}
 \end{figure}
 
-NeuMF provides the strongest absolute engagement in all three categories. This is consistent with NeuMF’s more expressive architecture, which combines matrix factorisation and a multi-layer perceptron, enabling it to learn sharper and more selective relevance scores. Its
-engagement-only NDCG@10 is highest in Electronics, Home \& Kitchen, and Sports \&
-Outdoors, and this advantage carries over to the representative Pareto operating points in
-Table~\ref{tab:pareto-summary}. If the main objective is to preserve the highest possible
-recommendation quality, NeuMF is the strongest backbone in this comparison.
-
-That advantage comes with less carbon flexibility. Because NeuMF learns sharper, more peaked relevance distributions, its frontier collapses earlier under carbon-aware re-ranking, especially in Electronics. By
-contrast, BPR and LightGCN usually expose more low-cost carbon headroom: within a 5\% NDCG
-budget, BPR leads in Electronics and Home \& Kitchen, while LightGCN leads in Sports \&
-Outdoors. Model choice therefore governs not only the baseline level of engagement, but
-also how much sustainability improvement is available before the ranking quality breaks
-down.
+NeuMF achieves the highest absolute engagement in all three categories, so it remains the
+strongest choice when preserving NDCG is the primary objective. BPR and LightGCN, however,
+usually expose more carbon headroom before quality degrades. Within a 5\% NDCG budget, BPR
+leads in Electronics and Home \& Kitchen, while LightGCN leads in Sports \& Outdoors.
+Model choice therefore affects both baseline quality and the shape of the trade-off.
 
 %-----------------------------------------------------------------------
 \subsection{Category-Level Variation}
@@ -798,20 +751,19 @@ overlays are moved to the appendix (Figure~\ref{fig:cross-category-pareto}).
 Category-level variation is substantial. Home \& Kitchen is the most carbon-flexible
 category overall: all three models exceed 80\% reduction within the 5\% NDCG budget.
 Electronics shows the strongest model dependence, ranging from 86.3\% reduction for BPR to
-only 7.6\% for NeuMF. Sports \& Outdoors sits between these extremes, with LightGCN and
-BPR retaining substantial carbon headroom but NeuMF remaining relatively constrained.
+7.6\% for NeuMF. Sports \& Outdoors lies between these extremes.
 
-These differences suggest a genuine model and category interaction. The attainable carbon
-reduction depends jointly on the category-specific PCF distribution and on how sharply the
-underlying recommender separates items by engagement score, so a single $\lambda$ policy is
-unlikely to transfer cleanly across both models and product domains.
+These differences suggest that the trade-off depends on both category structure and model
+behavior. Categories such as Home \& Kitchen appear to offer more low-carbon substitutes
+with similar utility, while Electronics is more restrictive. A single global $\lambda$
+therefore is unlikely to transfer cleanly across both models and categories.
 
-A useful way to interpret this interaction is through the concepts of
-\emph{substitutability} and \emph{score sharpness}. Categories such as Home \& Kitchen exhibit high substitutability, where many items provide similar utility but differ in carbon footprint. This allows re-ranking to replace higher-carbon items with lower-carbon alternatives at minimal relevance cost, and can in some cases correct local ordering errors near the top of the list. In contrast, categories such as Electronics contain more functionally distinct items, limiting the availability of low-carbon substitutes. At the model level, NeuMF produces more peaked relevance
-distributions, making rankings more sensitive to perturbations and
-causing earlier degradation in NDCG under re-ranking. By contrast, BPR
-and LightGCN exhibit flatter score distributions, allowing greater
-flexibility to reorder items without disrupting top-ranked relevance.
+One useful interpretation is in terms of \emph{substitutability} and \emph{score
+sharpness}. Categories with many close substitutes allow the re-ranker to replace
+higher-carbon items at low relevance cost. NeuMF, by contrast, tends to produce sharper
+relevance scores. That makes its rankings more sensitive to perturbation and helps explain
+why its carbon frontier often collapses earlier than BPR and LightGCN, especially in
+Electronics.
 
 \begin{table}[H]
 \centering
@@ -896,115 +848,56 @@ mechanisms increase user acceptance of environmentally informed rankings.
 \section{Discussion}
 \label{sec:discussion}
 
-Our results demonstrate that carbon-aware re-ranking introduces a structured and
-interpretable trade-off between recommendation quality and environmental impact. Across
-most of the models and categories, we observe a consistent \emph{plateau--cliff} pattern: for a
-wide range of $\lambda$, substantial reductions in recommended-item carbon footprint are
-achieved with minimal loss in NDCG@10, followed by a sharp degradation once the carbon
-signal begins to dominate relevance. This pattern has important implications for both the
-design and deployment of sustainability-aware recommender systems.
+Our main result is that carbon-aware re-ranking often has a broad low-cost region: for many
+$\lambda$ values, AvgPCF@10 drops substantially before NDCG@10 declines sharply. This makes
+post-hoc re-ranking attractive because it can reduce carbon exposure without retraining the
+base model.
 
-\paragraph{Low-cost sustainability gains.}
-The existence of a broad plateau region suggests that a large portion of the recommendation
-list can be adjusted toward lower-carbon alternatives without affecting the highest-ranked
-items that dominate user engagement. In practical terms, this means that meaningful
-reductions in environmental impact can be achieved with little or no observable degradation
-in recommendation quality. Rather than representing a strict trade-off, sustainability can
-often be treated as a \emph{free improvement} within a certain operating regime. This
-finding strengthens the case for post-hoc re-ranking as a viable intervention in existing
-production systems, where maintaining user experience is a primary constraint.
+The attainable trade-off is not uniform. NeuMF has the strongest baseline engagement but
+usually less carbon flexibility, whereas BPR and LightGCN expose more headroom. The same is
+true across categories: Home \& Kitchen is consistently more flexible than Electronics.
+Sustainability-aware recommendation is therefore not only a re-ranking problem, but also a
+model-selection and category-structure problem.
 
-\paragraph{Model-dependent sustainability capacity.}
-A central finding of this study is that the achievable trade-off depends strongly on the
-underlying recommendation model. NeuMF achieves the highest absolute engagement but exhibits
-limited carbon flexibility, with early degradation in NDCG under re-ranking. In contrast,
-BPR and LightGCN, while weaker in raw engagement, allow substantially larger carbon
-reductions before quality breaks down. This difference can be explained by the \emph{score
-distribution} produced by each model: NeuMF generates more peaked relevance scores, leading
-to strong separation between top-ranked items, whereas BPR and LightGCN produce flatter
-distributions that are more robust to perturbations. 
+These findings are broadly consistent with prior work showing that re-ranking can improve
+sustainability at limited accuracy cost~\cite{kalisvaart2025greenerrec}. The main
+difference is that our setting requires inferred rather than observed PCF values. The
+trade-off remains visible even under that additional uncertainty, which suggests that the
+approach is robust enough to study in large e-commerce catalogs where direct PCF labels are
+missing.
 
-This suggests that sustainability-aware recommendation is not only a re-ranking problem,
-but also a \emph{model selection problem}. Models that maximize engagement may implicitly
-reduce the available “headroom” for incorporating secondary objectives such as carbon
-footprint. Conversely, models with smoother score distributions may offer a more favorable
-balance between accuracy and flexibility in multi-objective settings.
-
-\paragraph{Category-dependent substitutability.}
-The results further show that the trade-off varies significantly across product categories.
-Categories such as \textit{Home and Kitchen} exhibit high substitutability, where many items
-provide similar utility but differ in carbon footprint, enabling large reductions without
-impacting relevance. In contrast, categories such as \textit{Electronics} contain more
-functionally distinct items, limiting the availability of low-carbon alternatives and
-leading to sharper trade-offs. This interaction between category structure and model
-behavior implies that a single global value of $\lambda$ is unlikely to be optimal in
-practice. Effective deployment may instead require category-specific or dynamically adapted
-trade-off parameters.
-
-\paragraph{Re-ranking as a policy lever.}
-An important aspect of the proposed framework is that the trade-off between engagement and
-sustainability is controlled by a single, explicit parameter $\lambda$. This makes the
-system inherently interpretable and auditable: increasing $\lambda$ directly corresponds to
-placing more weight on environmental considerations. In this sense, $\lambda$ functions not
-only as a technical hyperparameter, but as a \emph{policy lever} that can be adjusted by
-platform operators or regulators. This design aligns with emerging transparency and
-accountability requirements in large-scale digital systems, including the EU Digital
-Services Act~\cite{dsa2022}, which calls for greater visibility into how recommendation
-algorithms prioritize content and items. By exposing the trade-off explicitly, the system
-allows sustainability objectives to be incorporated without obscuring their effects.
-
-\paragraph{Relation to prior work.}
-Our findings align with prior work on sustainability-aware recommender systems,
-in particular Kalisvaart et al.~\cite{kalisvaart2025greenerrec}, who show that
-carbon-aware re-ranking can substantially reduce the environmental footprint of
-recommendations with only modest losses in accuracy. We observe the same qualitative
-pattern, including a broad region where carbon reductions can be achieved with minimal
-impact on engagement.
-
-A key difference, however, lies in the availability of sustainability signals. Prior
-work assumes access to item-level carbon labels, whereas our setting requires estimating
-PCF for sampled Amazon catalog subsets totalling 72{,}000 products, with 24{,}000 products in each
-of three categories. Our results therefore extend these findings to a more
-realistic large-scale e-commerce scenario, demonstrating that the engagement--sustainability
-trade-off persists even when environmental signals are incomplete and noisy. This suggests that carbon-aware re-ranking is a robust paradigm that
-generalizes beyond domains with curated sustainability data.
-
-\paragraph{Implications for future systems.}
-Taken together, these findings suggest that carbon-aware recommendation is both feasible and
-practically relevant, but that its effectiveness depends on multiple interacting factors:
-model architecture, category structure, and the availability of suitable alternatives.
-Future work could extend this framework by integrating carbon objectives directly into model
-training, exploring adaptive or personalized $\lambda$ strategies, or incorporating richer
-signals of user preference and environmental impact. More broadly, the results indicate that
-recommender systems can act as a scalable mechanism for influencing consumption patterns,
-and that even simple re-ranking strategies can yield meaningful environmental benefits when
-applied at scale.
+Finally, $\lambda$ functions as an explicit policy lever. It exposes the engagement--
+sustainability trade-off directly, making the system easier to inspect, tune, and audit
+than an approach in which the sustainability objective is embedded implicitly in model
+training.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
 We studied carbon-aware product recommendation in the realistic setting where Product
 Carbon Footprint (PCF) labels are unavailable for most catalog items and must be inferred.
-We proposed a modular framework combining retrieval-augmented PCF estimation with a
-post-hoc re-ranking strategy that trades off predicted engagement and environmental impact
-through a single parameter $\lambda$.
+We combined retrieval-augmented PCF estimation with a post-hoc re-ranking strategy
+controlled by a single parameter $\lambda$.
 
-Across three recommendation models and three product categories, we find that substantial
-reductions in recommended-item carbon footprint are achievable with minimal loss in
-recommendation quality. The attainable trade-off, however, depends strongly on both the
-underlying model and the category, highlighting that sustainability-aware recommendation is
-not a one-size-fits-all problem.
+Across three recommendation models and three product categories, substantial reductions in
+recommended-item carbon footprint are often available before recommendation quality drops
+sharply. The size of that region, however, depends strongly on both the model and the
+category.
 
-Crucially, the use of an explicit and tunable trade-off parameter makes the system
-transparent and controllable: adjusting $\lambda$ directly governs the balance between
-engagement and sustainability. This transparency aligns with the accountability requirements
-of the EU Digital Services Act~\cite{dsa2022} and ensures that the trade-off between user
-engagement and environmental impact remains open to inspection and deliberate adjustment by
-platform operators.
+These results suggest that sustainability-aware recommendation is feasible, but not
+one-size-fits-all. Model choice matters, category structure matters, and the usefulness of
+re-ranking depends on the availability of lower-carbon substitutes within the candidate
+pool.
 
-Overall, our results show that simple, transparent re-ranking strategies can provide a
-practical and scalable path toward more sustainable recommender systems, enabling platforms
-to incorporate environmental objectives without sacrificing user experience. Given the scale of modern recommender systems, even small per-user reductions in carbon exposure could translate into substantial aggregate environmental impact. This positions recommendation algorithms as a high-leverage intervention point for sustainable consumption.
+Because $\lambda$ is explicit and tunable, the framework offers a transparent way to add
+sustainability objectives to existing recommendation pipelines. This makes carbon-aware
+re-ranking a practical mechanism for studying and deploying sustainability trade-offs in
+large e-commerce recommendation. That transparency is also consistent with emerging
+accountability expectations for recommender systems~\cite{dsa2022}.
+
+More broadly, the results support a simple conclusion: recommendation systems can influence
+the carbon profile of what users are exposed to, and even a lightweight re-ranking
+intervention can make that influence measurable and controllable.
 % ----------------------------
 % Bibliography
 % ----------------------------
