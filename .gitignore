@@ -9,6 +9,8 @@ output/results/
 
 # Local caches
 .cache/
+log_tensorboard/
+output/quick_eval_cache.jsonl
 
 # Python
 __pycache__/
