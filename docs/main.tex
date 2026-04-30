@@ -330,23 +330,10 @@ sustainability information, and the recognition that ranking systems shape consu
 choice~\cite{buldeorai2023ecommerce, koundouri2024greendeal, eu2024825,
 jesse2021digitalnudging}.
 
-These pressures are linked. The environmental impact of e-commerce is not determined only
-by warehousing or transport in the abstract; it is also shaped by which products consumers
-are steered toward, how substitutable those products are, and how demand is distributed
-across the catalog~\cite{buldeorai2023ecommerce, olah2023sustainable}. This makes product
-exposure a meaningful sustainability variable rather than a purely marketing concern.
-
 These pressures matter because recommendation is a form of choice architecture. Any ranking
 policy decides which products become salient, and therefore which kinds of consumption are
 amplified. In sustainability settings, this makes ranking criteria a design choice rather
 than a neutral implementation detail~\cite{jesse2021digitalnudging, halimeh2026nudging}.
-
-At the same time, policy is moving toward more explicit treatment of sustainability
-information at the point of choice. The European Green Deal places sustainable consumption
-alongside production as a policy priority~\cite{koundouri2024greendeal}, and Directive
-2024/825 strengthens requirements around environmental claims and consumer-facing
-information~\cite{eu2024825}. These instruments do not prescribe recommender-system design,
-but they make ranking-time sustainability information more relevant rather than less.
 
 This framing also connects to broader concerns about autonomy and accountability. Making the
 trade-off explicit through $\lambda$ is more transparent than embedding a fixed
@@ -674,8 +661,7 @@ and~\ref{fig:lambda-sports}).
   \label{fig:lambda-electronics}
 \end{figure}
 
-The dominant pattern is a plateau followed by a cliff, consistent with prior
-sustainability-aware recommendation work~\cite{kalisvaart2025greenerrec}. For BPR and LightGCN, NDCG@10
+The dominant pattern is a plateau followed by a cliff. For BPR and LightGCN, NDCG@10
 remains nearly flat through most of the $\lambda$ grid while AvgPCF@10 falls steadily.
 Under a 5\% NDCG budget, these two models typically achieve roughly 70--86\% carbon
 reduction across the three categories.
@@ -695,9 +681,7 @@ region depends strongly on the backbone model.
 
 We use Pareto frontiers to compare the non-dominated engagement and carbon operating points
 across models. Figure~\ref{fig:multimodel-pareto} overlays the Pareto-optimal frontiers of
-all three recommenders within each category, and Table~\ref{tab:pareto-summary} reports one
-representative operating point per model and category subject to at least 10\% carbon
-reduction. Additional per-category Pareto plots are provided in the appendix
+all three recommenders within each category. Additional per-category Pareto plots are provided in the appendix
 (Figures~\ref{fig:pareto-electronics}--\ref{fig:pareto-sports}).
 
 \begin{figure}[H]
@@ -765,31 +749,6 @@ relevance scores. That makes its rankings more sensitive to perturbation and hel
 why its carbon frontier often collapses earlier than BPR and LightGCN, especially in
 Electronics.
 
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{llrrr}
-\hline
-Category & Model & NDCG@10 & Carbon red.\ (\%) & $\lambda^*$ \\
-\hline
-Electronics      & BPR      & 0.0078 & 73.2\% & 0.70 \\
-                 & LightGCN & 0.0249 & 40.2\% & 0.25 \\
-                 & NeuMF    & 0.0562 & 10.0\% & 0.50 \\
-\hline
-Home \& Kitchen  & BPR      & 0.0035 & 54.0\% & 0.60 \\
-                 & LightGCN & 0.0066 & 52.3\% & 0.60 \\
-                 & NeuMF    & 0.0164 & 50.6\% & 0.80 \\
-\hline
-Sports \& Outdoors & BPR    & 0.0036 & 12.9\% & 0.075 \\
-                 & LightGCN & 0.0101 & 17.9\% & 0.10 \\
-                 & NeuMF    & 0.0101 & 10.9\% & 0.25 \\
-\hline
-\end{tabular}
-\caption{Representative Pareto operating point ($\lambda^*$) per model and category,
-subject to at least 10\% carbon reduction relative to the $\lambda=0$ baseline. NDCG@10
-is measured at $\lambda^*$; carbon reduction is relative to the $\lambda=0$ baseline.}
-\label{tab:pareto-summary}
-\end{table}
 
 \section{Limitations and Future Work}\label{sec:limitations}
 Our framework enables systematic analysis of engagement and sustainability trade-offs in
@@ -866,8 +825,7 @@ trade-off remains visible even under that additional uncertainty, which suggests
 approach is robust enough to study in large e-commerce catalogs where direct PCF labels are
 missing.
 
-Finally, $\lambda$ functions as an explicit policy lever. It exposes the engagement--
-sustainability trade-off directly, making the system easier to inspect, tune, and audit
+Finally, $\lambda$ functions as an explicit policy lever. It exposes the engagement-sustainability trade-off directly, making the system easier to inspect, tune, and audit
 than an approach in which the sustainability objective is embedded implicitly in model
 training.
 
